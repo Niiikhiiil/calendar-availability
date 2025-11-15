@@ -7,6 +7,8 @@ import {
   responseMessage,
 } from "../utils/utils.js";
 
+const isProduction = process.env.NODE_ENV === "production";
+
 export const registerUser = async (req, res) => {
   try {
     const parsed = registerSchema.parse(req.body);
@@ -24,7 +26,8 @@ export const registerUser = async (req, res) => {
 
     res.cookie(cookieName, token, {
       httpOnly: true,
-      sameSite: "strict",
+      secure: isProduction,
+      sameSite: isProduction ? "none" : "strict",
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in ms
     });
 
@@ -81,7 +84,8 @@ export const loginUser = async (req, res) => {
     const token = signToken({ id: existUser.id, email: existUser.email });
     res.cookie(cookieName, token, {
       httpOnly: true,
-      sameSite: "strict",
+      secure: isProduction,
+      sameSite: isProduction ? "none" : "strict",
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in ms
     });
 
