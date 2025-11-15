@@ -253,6 +253,7 @@ Development: http://localhost:4000/api
 | email      | VARCHAR(255)| UNIQUE, NOT NULL      |
 | password   | VARCHAR(255)| NOT NULL              |
 | created_at | TIMESTAMPTZ | DEFAULT NOW()         |
+| deaprtment | TEXT |
 
 ### availability Table
 
@@ -263,6 +264,8 @@ Development: http://localhost:4000/api
 | start      | TIMESTAMP   | NOT NULL              |
 | end        | TIMESTAMP   | NOT NULL              |
 | created_at | TIMESTAMPTZ | DEFAULT NOW()         |
+| description | TEXT        | 
+| status     | avalability_status | NOT NULL              |
 
 ---
 
