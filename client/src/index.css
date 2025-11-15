@@ -1,0 +1,60 @@
+@import "tailwindcss";
+
+/* small overrides */
+html,
+body,
+#root {
+  height: 100%;
+}
+
+:root {
+  --sb-track-color: #b9b6ea;
+  --sb-thumb-color: #6533ff;
+  --sb-size: 7px;
+}
+
+/* Vertical scrollbar */
+::-webkit-scrollbar {
+  width: var(--sb-size); /* Y scroll */
+  height: var(--sb-size); /* X scroll */
+}
+
+/* Track */
+::-webkit-scrollbar-track {
+  background: var(--sb-track-color);
+  border-radius: 5px;
+}
+
+/* Thumb */
+::-webkit-scrollbar-thumb {
+  background: var(--sb-thumb-color);
+  border-radius: 5px;
+}
+
+/* Firefox */
+@supports not selector(::-webkit-scrollbar) {
+  body {
+    scrollbar-width: thin;
+    scrollbar-color: var(--sb-thumb-color) var(--sb-track-color);
+  }
+}
+
+/* Hide FullCalendar's default header */
+.fc .fc-header-toolbar {
+  display: none !important;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.2s ease-out;
+}

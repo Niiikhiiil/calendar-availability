@@ -1,0 +1,10 @@
+node_modules/
+dist/
+build/
+.env
+.npm
+.eslintcache
+pids/
+*.pid
+*.seed
+*.pid.lock
