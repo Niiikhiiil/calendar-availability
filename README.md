@@ -332,7 +332,7 @@ This project is open-source and available for testing and development use.
 
 ## 📧 Support
 
-For support, please open an issue in the GitHub repository or contact the developer.
+Give a star, don't forget! ⭐⭐⭐⭐⭐⭐
 
 ---
 
