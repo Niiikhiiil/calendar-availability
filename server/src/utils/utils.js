@@ -1,4 +1,4 @@
-import { email, z } from "zod";
+import { z } from "zod";
 
 export const registerSchema = z.object({
   name: z.string().min(2),
@@ -26,12 +26,31 @@ export const updateUserSchema = z.object({
     .nullable(),
 });
 
-export const availabilitySchema = z.object({
-  start: z.string(), // ISO
-  end: z.string(),
-  status: z.enum(["AVAILABLE", "BUSY", "TENTATIVE"]),
-  recurringRule: z.string().optional(),
-  description: z.string(),
+export const createAvailabilitySchema = z.object({
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  endDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  timeStart: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/),
+  timeEnd: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/),
+  status: z
+    .enum(["AVAILABLE", "BUSY", "TENTATIVE", "LEAVE"])
+    .default("AVAILABLE"),
+  description: z.string().optional(),
+  recurrence: z
+    .object({
+      freq: z.enum(["DAILY", "WEEKLY", "MONTHLY"]),
+      interval: z.number().min(1).default(1),
+      byDay: z
+        .array(z.enum(["MO", "TU", "WE", "TH", "FR", "SA", "SU"]))
+        .optional(),
+      until: z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/)
+        .optional(),
+    })
+    .optional(),
 });
 
 export const responseMessage = {

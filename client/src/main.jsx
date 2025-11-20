@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
 import 'react-tooltip/dist/react-tooltip.css'
+import "react-datepicker/dist/react-datepicker.css";
 
 createRoot(document.getElementById('root')).render(
   <App />

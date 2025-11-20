@@ -1,457 +1,552 @@
-import moment from "moment";
-import { RRule } from "rrule";
-import { io } from "socket.io-client";
-import { useState, useEffect, useRef } from "react";
+// import moment from "moment";
+// import { io } from "socket.io-client";
+// import { useState, useEffect, useRef } from "react";
+// import Swal from "sweetalert2";
 
-import { apiUrls } from "../utils/apiUrl";
-import Loader from "../components/ui/Loader";
-import Sidebar from "../components/ui/Sidebar";
-import axiosInstance, { base } from "../axios/axiosInstance";
-import MobileHeader from "../components/ui/MobileHeader";
-import ProfileModal from "../components/ui/ProfileModal";
-import OwnCalendar from "../components/calendars/OwnCalendar";
-import AvailabilityModal from "../components/ui/AvailabilityModal";
-import TeammateCalendar from "../components/calendars/TeammateCalendar";
+// import { apiUrls } from "../utils/apiUrl";
+// import Loader from "../components/ui/Loader";
+// import Sidebar from "../components/ui/Sidebar";
+// import axiosInstance, { base } from "../axios/axiosInstance";
+// import MobileHeader from "../components/ui/MobileHeader";
+// import ProfileModal from "../components/ui/ProfileModal";
+// import OwnCalendar from "../components/calendars/OwnCalendar";
+// import AvailabilityModal from "../components/ui/AvailabilityModal";
+// import TeammateCalendar from "../components/calendars/TeammateCalendar";
 
-const SOCKET_URL = base;
+// const SOCKET_URL = base;
 
-export default function Dashboard({ user, setUser }) {
-    const [isLoading, setIsLoading] = useState("");
-    const [events, setEvents] = useState([]);
-    const [selectedEvent, setSelectedEvent] = useState(null);
-    const [currentRange, setCurrentRange] = useState({
-        start: moment().startOf("isoWeek").format("YYYY-MM-DD"),
-        end: moment().endOf("isoWeek").format("YYYY-MM-DD"),
-    });
-    const [searchTerm, setSearchTerm] = useState("");
-    const [departmentFilter, setDepartmentFilter] = useState("");
-    const [currentView, setCurrentView] = useState("timeGridWeek");
-    const [errors, setErrors] = useState({});
+// export default function Dashboard({ user, setUser }) {
+//     const [isLoading, setIsLoading] = useState("");
+//     const [events, setEvents] = useState([]);
+//     const [selectedEvent, setSelectedEvent] = useState(null); // ← NOW FULL EVENT
+//     const [currentView, setCurrentView] = useState("timeGridWeek");
+//     const [currentRange, setCurrentRange] = useState({
+//         start:
+//             currentView === "timeGridWeek"
+//                 ? moment().startOf("isoWeek").format("YYYY-MM-DD")
+//                 : moment().startOf("month").format("YYYY-MM-DD"),
+//         end:
+//             currentView === "timeGridWeek"
+//                 ? moment().endOf("isoWeek").format("YYYY-MM-DD")
+//                 : moment().endOf("month").format("YYYY-MM-DD"),
+//     });
+//     const [searchTerm, setSearchTerm] = useState("");
+//     const [departmentFilter, setDepartmentFilter] = useState("");
+//     const [errors, setErrors] = useState({});
 
-    const [modalOpen, setModalOpen] = useState(false);
-    const [sidebarOpen, setSidebarOpen] = useState(false);
-    const [profileModalOpen, setProfileModalOpen] = useState(false);
+//     const [modalOpen, setModalOpen] = useState(false);
+//     const [sidebarOpen, setSidebarOpen] = useState(false);
+//     const [profileModalOpen, setProfileModalOpen] = useState(false);
 
-    const [form, setForm] = useState({
-        description: "",
-        start: "",
-        end: "",
-        status: "AVAILABLE",
-        recurrence: "NONE",
-        interval: 1,
-        until: "",
-    });
-    const [editForm, setEditForm] = useState({
-        name: user?.name || "",
-        department: user?.department || ""
-    });
-    const [allUsers, setAllUsers] = useState([]);
-    const [selectedUsers, setSelectedUsers] = useState([]);
-    const [userCalendars, setUserCalendars] = useState({});
-    const socket = useRef(null);
-    const calendarRef = useRef(null);
-    const teammateCalendarRefs = useRef({});
+//     const [form, setForm] = useState({
+//         description: "",
+//         startDate: "",
+//         endDate: "",
+//         timeStart: "",
+//         timeEnd: "",
+//         status: "AVAILABLE",
+//         recurrence: undefined,
+//     });
 
-    const filteredUsers = allUsers.filter((u) => {
-        const matchesSearch = u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            u.email.toLowerCase().includes(searchTerm.toLowerCase());
+//     const [allUsers, setAllUsers] = useState([]);
+//     const [selectedUsers, setSelectedUsers] = useState([]);
+//     const [userCalendars, setUserCalendars] = useState({});
+//     const socket = useRef(null);
+//     const calendarRef = useRef(null);
+//     const teammateCalendarRefs = useRef({});
 
-        const matchesDept = departmentFilter ? u.department === departmentFilter : true;
+//     const [editMode, setEditMode] = useState("this"); // "this" | "future" | "all" | "range"
+//     const [deleteMode, setDeleteMode] = useState("this"); // same options
+//     const [rangeStart, setRangeStart] = useState("");
+//     const [rangeEnd, setRangeEnd] = useState("");
 
-        return matchesSearch && matchesDept;
-    });
+//     const filteredUsers = allUsers.filter((u) => {
+//         const matchesSearch =
+//             u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+//             u.email.toLowerCase().includes(searchTerm.toLowerCase());
+//         const matchesDept = departmentFilter
+//             ? u.department === departmentFilter
+//             : true;
+//         return matchesSearch && matchesDept;
+//     });
 
+//     useEffect(() => {
+//         if (modalOpen && selectedEvent) {
+//             const eventDate = moment(selectedEvent.start).format("YYYY-MM-DD");
+//             setRangeStart(eventDate);
+//             setRangeEnd(eventDate);
+//             setEditMode("this");
+//             setDeleteMode("this");
+//         }
+//     }, [modalOpen, selectedEvent]);
 
-    // INITIALIZE SOCKET
-    useEffect(() => {
-        socket.current = io(SOCKET_URL, { withCredentials: true });
-        socket.current.on("availability-updated", () => {
-            getCurrentUserEvents();
-            selectedUsers.forEach((u) => getOtherUserEvents(u));
-        });
+//     // SOCKET
+//     useEffect(() => {
+//         socket.current = io(SOCKET_URL, { withCredentials: true });
+//         socket.current.on("availability-updated", () => {
+//             getCurrentUserEvents();
+//             selectedUsers.forEach((u) => getOtherUserEvents(u));
+//         });
+//         return () => socket.current?.disconnect();
+//     }, [selectedUsers]);
 
-        return () => socket.current.disconnect();
-    }, [selectedUsers]);
+//     // GET ALL USERS
+//     useEffect(() => {
+//         const getAllUsers = async () => {
+//             try {
+//                 setIsLoading("Loading teammates...");
+//                 const res = await axiosInstance.get(apiUrls.getAllUsers);
+//                 if (res?.data?.success) {
+//                     setAllUsers(res.data.data.filter((u) => u.id !== user.id));
+//                 }
+//             } catch (err) {
+//                 console.error(err);
+//             } finally {
+//                 setIsLoading("");
+//             }
+//         };
+//         getAllUsers();
+//     }, [user.id]);
 
-    // GET ALL USERS
-    useEffect(() => {
-        const getAllUsers = async () => {
-            try {
-                setIsLoading("Loading users...")
-                const res = await axiosInstance.get(apiUrls?.getAllUsers);
-                if (res?.data?.success) {
-                    setAllUsers(res?.data?.data?.filter((u) => u.id !== user.id));
-                } else {
-                    setAllUsers([]);
-                }
-            } catch (err) {
-                console.error(err);
-            } finally {
-                setIsLoading("");
-            }
-        };
-        getAllUsers();
-    }, []);
+//     // GET CURRENT USER EVENTS
+//     const getCurrentUserEvents = async (loading = false) => {
+//         try {
+//             if (loading) setIsLoading("Loading your availability...");
+//             const start = moment(currentRange.start).format("YYYY-MM-DD");
+//             const end = moment(currentRange.end).format("YYYY-MM-DD");
 
-    // GET CURRENT USER EVENTS
-    const getCurrentUserEvents = async (loading = false) => {
-        try {
-            const start = currentRange.start
-            const end = currentRange.end
-            setIsLoading(loading ? "Loading your availability events..." : "")
-            const res = await axiosInstance.get(apiUrls?.getCurrentUserAvailability(start, end));
+//             const res = await axiosInstance.get(
+//                 apiUrls.getCurrentUserAvailability(start, end)
+//             );
+//             console.log('res.data.data', res.data.data)
 
-            if (res?.data?.success) {
-                const mapped = res?.data?.data?.map((av) => ({
-                    id: av.id.toString(),
-                    title: av.status,
-                    description: av.description,
-                    start: av.start,
-                    end: av.end,
-                    backgroundColor: av?.backgroundColor || "#3b82f6",
-                    borderColor: av?.borderColor || "#2563eb",
-                    recurringRule: av.recurringRule || "",
-                }));
-                setEvents(mapped);
-            } else {
-                setEvents([]);
-            }
-        } catch (err) {
-            console.error(err);
-        } finally {
-            setIsLoading("");
-        }
-    };
+//             if (res?.data?.success) {
+//                 const mapped = res.data.data.map((av) => ({
+//                     ...av,
+//                     title: av.title,
+//                     extendedProps: {
+//                         ...av.extendedProps,
+//                         description: av.extendedProps.description || "",
+//                         isRecurring: !!av.extendedProps.ruleId,
+//                     },
+//                 }));
+//                 setEvents(mapped);
+//             } else {
+//                 setEvents([]);
+//             }
+//         } catch (err) {
+//             console.error("Failed to load events:", err);
+//         } finally {
+//             setIsLoading("");
+//         }
+//     };
 
-    useEffect(() => {
-        getCurrentUserEvents(true);
-    }, [currentRange]);
+//     useEffect(() => {
+//         getCurrentUserEvents(true);
+//     }, [currentRange]);
 
-    console.log('events', events)
+//     // GET OTHER USER EVENTS
+//     const getOtherUserEvents = async (user) => {
+//         try {
+//             setIsLoading(`Loading ${user.name}'s calendar...`);
+//             const start = moment(currentRange.start).format("YYYY-MM-DD");
+//             const end = moment(currentRange.end).format("YYYY-MM-DD");
 
-    // GET OTHER USER'S CALENDAR EVENTS
-    const getOtherUserEvents = async (user) => {
-        try {
-            setIsLoading(`Loading ${user?.name}'s availability...`)
-            const res = await axiosInstance.get(apiUrls?.getOtherUserAvailability(user?.id, currentRange.start, currentRange.end));
+//             const res = await axiosInstance.get(
+//                 apiUrls.getOtherUserAvailability(user.id, start, end)
+//             );
+//             if (res?.data?.success) {
+//                 setUserCalendars((prev) => ({ ...prev, [user.id]: res.data.data }));
+//             }
+//         } catch (err) {
+//             console.error(err);
+//         } finally {
+//             setIsLoading("");
+//         }
+//     };
 
-            if (res?.data?.success) {
-                const mapped = res?.data?.data?.map((av) => ({
-                    id: av.id.toString(),
-                    title: av.status,
-                    description: av.description,
-                    start: av.start,
-                    end: av.end,
-                    backgroundColor: av?.backgroundColor || "#3b82f6",
-                    borderColor: av?.borderColor || "#2563eb",
-                    recurringRule: av.recurringRule || "",
-                }));
-                setUserCalendars((prev) => ({ ...prev, [user.id]: mapped }));
-            } else {
-                setUserCalendars((prev) => ({ ...prev, [user.id]: [] }));
-            }
-        } catch (err) {
-            console.error(err);
-        } finally {
-            setIsLoading("");
-        }
-    };
+//     const toggleUserSelection = (u) => {
+//         if (selectedUsers.some((s) => s.id === u.id)) {
+//             setSelectedUsers((prev) => prev.filter((s) => s.id !== u.id));
+//             setUserCalendars((prev) => {
+//                 const updated = { ...prev };
+//                 delete updated[u.id];
+//                 return updated;
+//             });
+//             delete teammateCalendarRefs.current[u.id];
+//         } else {
+//             setSelectedUsers((prev) => [...prev, u]);
+//             getOtherUserEvents(u);
+//         }
+//     };
 
-    // TOGGLE USER SELECTION
-    const toggleUserSelection = (u) => {
-        if (selectedUsers.some((sel) => sel.id === u.id)) {
-            setSelectedUsers(selectedUsers.filter((sel) => sel.id !== u.id));
-            setUserCalendars((prev) => {
-                const newState = { ...prev };
-                delete newState[u.id];
-                return newState;
-            });
-            // Clean up ref
-            delete teammateCalendarRefs.current[u.id];
-        } else {
-            setSelectedUsers([...selectedUsers, u]);
-            getOtherUserEvents(u);
-        }
-    };
+//     const handleDateTimeSelect = (selectInfo) => {
+//         const isMonthView = currentView === "dayGridMonth";
 
-    // SELECT TIME RANGE TO CREATE EVENT
-    const handleDateTimeSelect = (selectInfo) => {
-        setForm({
-            description: "",
-            start: moment(selectInfo.start).format("YYYY-MM-DDTHH:mm:ss"),
-            end: moment(selectInfo.end).format("YYYY-MM-DDTHH:mm:ss"),
-            status: "AVAILABLE",
-            recurrence: "NONE",
-            interval: 1,
-            until: "",
-        });
-        setSelectedEvent(null);
-        setModalOpen(true);
-    };
+//         const startMoment = moment(selectInfo.start);
+//         const endMoment = moment(selectInfo.end);
 
-    // CLICK ON EVENT TO EDIT
-    const handleEventClick = (clickInfo) => {
-        const ev = events.find((e) => e.id === clickInfo.event._def.publicId);
-        if (!ev) return;
+//         let startDate = startMoment.format("YYYY-MM-DD");
+//         let endDate = isMonthView ? endMoment.subtract(1, "day").format("YYYY-MM-DD") : startDate; // Month view gives end exclusive
 
-        let recurrence = "NONE";
-        let interval = 1;
-        let until = "";
+//         let timeStart, timeEnd;
 
-        if (ev.recurringRule) {
-            try {
-                const rule = RRule.fromString(ev.recurringRule);
-                if (rule.options.freq === RRule.DAILY) recurrence = "DAILY";
-                else if (rule.options.freq === RRule.WEEKLY) recurrence = "WEEKLY";
-                else if (rule.options.freq === RRule.MONTHLY) recurrence = "MONTHLY";
+//         if (isMonthView) {
+//             // Auto-select nearest 30-min block
+//             const now = moment();
 
-                interval = rule.options.interval || 1;
-                if (rule.options.until) until = moment(rule.options.until).format("YYYY-MM-DD");
-            } catch (err) {
-                console.error("Failed to parse recurrence rule", err);
-            }
-        }
+//             // nearest next 30 min
+//             const nextSlot = moment()
+//                 .minute(Math.ceil(now.minute() / 30) * 30)
+//                 .second(0);
 
-        setForm({
-            description: ev.description,
-            start: moment(ev.start).format("YYYY-MM-DDTHH:mm:ss"),
-            end: moment(ev.end).format("YYYY-MM-DDTHH:mm:ss"),
-            status: ev.title || "AVAILABLE",
-            recurrence,
-            interval,
-            until,
-        });
+//             timeStart = nextSlot.format("HH:mm");
+//             timeEnd = nextSlot.clone().add(30, "minutes").format("HH:mm");
+//         } else {
+//             // Normal week/day view → user selected exact times
+//             timeStart = startMoment.format("HH:mm");
+//             timeEnd = endMoment.format("HH:mm");
+//         }
 
-        setSelectedEvent(ev);
-        setModalOpen(true);
-    };
+//         setForm({
+//             description: "",
+//             startDate,
+//             endDate,
+//             timeStart,
+//             timeEnd,
+//             status: "AVAILABLE",
+//             recurrence: undefined,
+//         });
 
-    // SUBMIT CREATE/UPDATE EVENT
-    const handleSubmit = async () => {
-        try {
-            let tempErrors = {};
+//         setSelectedEvent(null);
+//         setModalOpen(true);
+//     };
 
-            if (!form.description?.trim()) {
-                tempErrors.description = "Description is required";
-            }
+//     console.log('events', events)
 
-            if (!form.start || !form.end || moment(form.start).isSameOrAfter(moment(form.end))) {
-                tempErrors.time = "Start time must be before end time";
-            }
+//     // CLICK EVENT → EDIT (THIS IS THE FIX!)
+//     const handleEventClick = (clickInfo) => {
+//         const event = clickInfo.event;
+//         const props = event.extendedProps;
+//         console.log('clickInfo.event', clickInfo.event)
 
-            if (form.recurrence !== "NONE") {
-                if (!form.until) {
-                    tempErrors.until = "Until date is required for recurring events";
-                } else if (moment(form.until).isBefore(moment(form.start), "day")) {
-                    tempErrors.until = "Until date must be after the start date";
-                }
-            }
+//         setForm({
+//             description: props.description || "",
+//             startDate: moment(event.start).format("YYYY-MM-DD"),
+//             endDate: moment(event.end).format("YYYY-MM-DD"),
+//             timeStart: moment(event.start).format("HH:mm"),
+//             timeEnd: moment(event.end).format("HH:mm"),
+//             status: event.title,
+//             recurrence: undefined, // We don't edit recurrence rule yet (advanced)
+//         });
 
-            if (Object.keys(tempErrors).length > 0) {
-                setErrors(tempErrors);
-                return;
-            }
+//         // THIS IS CRITICAL — store FULL event
+//         setSelectedEvent({
+//             id: event.id,
+//             ruleId: props.ruleId || null,
+//             isRecurring: !!props.ruleId,
+//             start: event.start,
+//             end: event.end,
+//             title: event.title,
+//             extendedProps: props,
+//         });
 
-            setErrors({});
-            setIsLoading(selectedEvent ? "Updating availability..." : "Saving availability...")
+//         setModalOpen(true);
+//     };
 
-            let recurringRule = "";
-            if (form.recurrence !== "NONE") {
-                const ruleOptions = {
-                    freq: form.recurrence === "DAILY" ? RRule.DAILY : RRule.WEEKLY,
-                    interval: Number(form.interval) || 1,
-                    dtstart: moment(form.start).toDate(),
-                };
+//     // SUBMIT (CREATE/UPDATE)
+//     const handleSubmit = async () => {
+//         try {
+//             if (!form.startDate || !form.timeStart || !form.timeEnd) {
+//                 setErrors({ time: "Date and time are required" });
+//                 await Swal.fire({
+//                     icon: "error",
+//                     title: "Missing Fields",
+//                     text: "Date and time are required"
+//                 });
+//                 return;
+//             }
+//             if (form.timeStart >= form.timeEnd) {
+//                 setErrors({ time: "End time must be after start time" });
+//                 await Swal.fire({
+//                     icon: "error",
+//                     title: "Invalid Time",
+//                     text: "End time must be after start time"
+//                 });
+//                 return;
+//             }
 
-                if (form.until) {
-                    ruleOptions.until = moment(form.until).endOf("day").toDate();
-                }
+//             const basePayload = {
+//                 startDate: form.startDate,
+//                 endDate: form.endDate || undefined,
+//                 timeStart: form.timeStart,
+//                 timeEnd: form.timeEnd,
+//                 status: form.status,
+//                 description: form.description?.trim() || null,
+//                 recurrence:
+//                     form.recurrence?.freq && form.recurrence.freq !== "NONE"
+//                         ? { ...form.recurrence }
+//                         : undefined,
+//             };
 
-                recurringRule = new RRule(ruleOptions).toString();
-            }
+//             // Add conditional fields based on edit mode
+//             if (editMode === "future") {
+//                 basePayload.applyFromDate = moment(selectedEvent.start).format("YYYY-MM-DD");
+//             } else if (editMode === "range") {
+//                 if (!rangeStart || !rangeEnd) {
+//                     await Swal.fire({
+//                         icon: "error",
+//                         title: "Range Required",
+//                         text: "Please select range start and end dates"
+//                     });
+//                     return;
+//                 }
+//                 basePayload.applyToRange = {
+//                     start: rangeStart,
+//                     end: rangeEnd,
+//                 };
+//             }
 
-            const payload = {
-                description: form.description,
-                start: form.start,  // convert to UTC ISO string
-                end: form.end,    // convert to UTC ISO string
-                status: form.status,
-                recurringRule,
-            };
-            let res;
+//             setIsLoading("Saving...");
 
-            console.log('payload', payload)
+//             if (selectedEvent) {
+//                 // === UPDATE LOGIC ===
+//                 const instanceId = selectedEvent.extendedProps.instanceId;
 
-            if (selectedEvent) {
-                res = await axiosInstance.put(apiUrls?.updateAvailability(selectedEvent.id), payload);
-            } else {
-                res = await axiosInstance.post(apiUrls?.createAvailability, payload);
-            }
+//                 let url = apiUrls.updateOneAvailability(instanceId);
 
-            if (res?.data?.success) {
-                socket.current.emit("availabilityChanged");
-                setModalOpen(false);
-                getCurrentUserEvents(true);
-            } else {
-                console.error('Failed to save availability!');
-            }
-        } catch (err) {
-            console.error(err);
-        } finally {
-            setIsLoading("");
-        }
-    };
+//                 // Only use /all route if updating entire series AND it's recurring
+//                 if (editMode === "all" && selectedEvent.extendedProps.isRecurring) {
+//                     url = apiUrls.updateAllAvailability(instanceId);
+//                 }
 
-    // DELETE EVENT
-    const handleDelete = async () => {
-        if (!selectedEvent) return;
-        try {
-            setIsLoading("Deleting availability...");
-            const res = await axiosInstance.delete(apiUrls?.deleteAvailability(selectedEvent.id));
-            if (res?.data?.success) {
-                socket.current.emit("availability-updated");
-                setModalOpen(false);
-                getCurrentUserEvents(true);
-            } else {
-                console.error('Failed to delete availability!');
-            }
-        } catch (err) {
-            console.error(err);
-        } finally {
-            setIsLoading("");
-        }
-    };
+//                 await axiosInstance.put(url, basePayload);
+//             } else {
+//                 // === CREATE LOGIC ===
+//                 await axiosInstance.post(apiUrls.createAvailability, basePayload);
+//             }
 
-    // LOGOUT USER
-    const handleLogout = async () => {
-        try {
-            setIsLoading("Logging out...");
-            const res = await axiosInstance.post(apiUrls?.logoutUser);
-            if (res?.data?.success) {
-                setUser(null);
-            } else {
-                console.error('Failed to logout!');
-            }
-        } catch (err) {
-            console.error(err);
-        } finally {
-            setIsLoading("");
-        }
-    };
+//             socket.current?.emit("availability-updated");
+//             setModalOpen(false);
+//             getCurrentUserEvents(true);
+//             selectedUsers.forEach((u) => getOtherUserEvents(u));
 
-    // UPDATE CURRENT USER PROFILE
-    const UpdateUserProfile = async (userForm) => {
-        try {
-            setIsLoading("Updating profile...");
-            const res = await axiosInstance.put(apiUrls?.updateUser, userForm);
-            if (res?.data?.success) {
-                setUser(res?.data?.data);
-                setProfileModalOpen(false);
-            } else {
-                console.error('Failed to update profile!');
-            }
-        } catch (error) {
-            console.error(error);
-        } finally {
-            setIsLoading("");
-        }
-    }
+//             // Success popup
+//             await Swal.fire({
+//                 icon: "success",
+//                 title: selectedEvent ? "Availability Updated Successfully." : "Availability created Successfully.",
+//                 timer: 1500,
+//                 showConfirmButton: false
+//             });
+//         } catch (err) {
+//             await Swal.fire({
+//                 icon: "error",
+//                 title: "Save Failed",
+//                 text: err.response?.data?.message || err.message
+//             });
+//         } finally {
+//             setIsLoading("");
+//         }
+//     };
 
-    return (
-        <>
-            {isLoading && (<Loader message={isLoading} />)}
-            <div className="flex flex-col lg:flex-row h-screen bg-gradient-to-br from-blue-100 to-indigo-200 backdrop-blur-2xl">
+//     // DELETE
+//     const handleDelete = async () => {
+//         if (!selectedEvent) return;
 
-                {/* MOBILE HEADER  */}
-                <MobileHeader
-                    title="Multi-user Calendar Availability"
-                    sidebarOpen={sidebarOpen}
-                    setSidebarOpen={setSidebarOpen}
-                />
+//         const instanceId = selectedEvent.extendedProps.instanceId;
+//         const isRecurring = selectedEvent.extendedProps.isRecurring;
 
-                {/* SIDEBAR  */}
-                <Sidebar
-                    sidebarOpen={sidebarOpen}
-                    setSidebarOpen={setSidebarOpen}
-                    user={user}
-                    searchTerm={searchTerm}
-                    setSearchTerm={setSearchTerm}
-                    departmentFilter={departmentFilter}
-                    setDepartmentFilter={setDepartmentFilter}
-                    allUsers={allUsers}
-                    filteredUsers={filteredUsers}
-                    selectedUsers={selectedUsers}
-                    toggleUserSelection={toggleUserSelection}
-                    setProfileModalOpen={setProfileModalOpen}
-                    handleLogout={handleLogout}
-                />
+//         let url = apiUrls.deleteOneAvailability(instanceId);
+//         let payload = {};
 
-                <main className="flex-1 overflow-auto p-3 sm:p-4 lg:p-6">
-                    <div className="max-w-full mx-auto">
-                        <div className="mb-6 hidden md:block">
-                            <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-2">
-                                Team Calendar
-                            </h1>
-                            <p className="text-gray-600">
-                                Manage your availability and view team schedules
-                            </p>
-                        </div>
+//         // Ask for delete confirmation (for non-recurring events)
+//         if (!isRecurring && deleteMode !== "range") {
+//             const confirm = await Swal.fire({
+//                 title: "Are you sure?",
+//                 text: "You want to delete this availability.",
+//                 icon: "warning",
+//                 showCancelButton: true,
+//                 confirmButtonText: "Yes, delete",
+//             });
 
-                        {/* CALENDARS GRID  */}
-                        <div className={`grid gap-4 sm:gap-6 sm:grid-cols-1 ${selectedUsers.length >= 1 ? 'lg:grid-cols-2' : 'lg:grid-cols-1'}`}>
+//             if (!confirm.isConfirmed) return;
+//         }
 
-                            {/* CURRENT USER'S CALENDAR  */}
-                            <OwnCalendar
-                                user={user}
-                                calendarRef={calendarRef}
-                                currentView={currentView}
-                                setCurrentView={setCurrentView}
-                                events={events}
-                                handleDateSelect={handleDateTimeSelect}
-                                handleEventClick={handleEventClick}
-                                setCurrentRange={setCurrentRange}
-                            />
-                            {/* OTHER USERS' CALENDARS  */}
-                            {selectedUsers?.map((u) => {
-                                const refKey = u.id;
+//         // Check recurring delete modes
+//         if (deleteMode === "all" && isRecurring) {
+//             url = apiUrls.deleteAllAvailability(instanceId);
+//         } else if (deleteMode === "future" && isRecurring) {
+//             payload.applyFromDate = moment(selectedEvent.start).format("YYYY-MM-DD");
+//         } else if (deleteMode === "range" && isRecurring) {
+//             if (!rangeStart || !rangeEnd) {
+//                 await Swal.fire({
+//                     icon: "error",
+//                     title: "Range Required",
+//                     text: "Please select range for deletion"
+//                 });
+//                 return;
+//             }
+//             payload.applyToRange = { start: rangeStart, end: rangeEnd };
+//         }
 
-                                return (
-                                    <TeammateCalendar
-                                        key={u.id}
-                                        user={u}
-                                        calendarRefAPI={teammateCalendarRefs.current[refKey]?.getApi()}
-                                        calendarRef={(el) => (teammateCalendarRefs.current[refKey] = el)}
-                                        events={userCalendars[u.id] || []}
-                                        onViewChange={(view) => setCurrentView(view)}
-                                        currentView={currentView}
-                                        removeCalendar={toggleUserSelection}
-                                    />
-                                );
-                            })}
-                        </div>
-                    </div>
-                </main>
+//         try {
+//             setIsLoading("Deleting...");
 
-                {/* EVENT MODALS  */}
-                <AvailabilityModal
-                    modalOpen={modalOpen}
-                    setModalOpen={setModalOpen}
-                    selectedEvent={selectedEvent}
-                    form={form}
-                    setForm={setForm}
-                    errors={errors}
-                    handleSubmit={handleSubmit}
-                    handleDelete={handleDelete}
-                />
+//             await axiosInstance.delete(url, { data: payload });
 
-                {/* PROFILE MODAL  */}
-                <ProfileModal
-                    profileModalOpen={profileModalOpen}
-                    setProfileModalOpen={setProfileModalOpen}
-                    editForm={editForm}
-                    setEditForm={setEditForm}
-                    UpdateCurrentUser={UpdateUserProfile}
-                />
-            </div>
-        </>
-    );
-}
+//             socket.current?.emit("availability-updated");
+//             setModalOpen(false);
+//             getCurrentUserEvents(true);
+//             selectedUsers.forEach((u) => getOtherUserEvents(u));
+
+//             await Swal.fire({
+//                 icon: "success",
+//                 title: "Deleted",
+//                 text: "Availability removed successfully",
+//                 timer: 1500,
+//                 showConfirmButton: false,
+//             });
+
+//         } catch (err) {
+//             await Swal.fire({
+//                 icon: "error",
+//                 title: "Delete failed",
+//                 text: err.response?.data?.message || err.message,
+//             });
+//         } finally {
+//             setIsLoading("");
+//         }
+//     };
+
+//     // LOGOUT & PROFILE
+//     const handleLogout = async () => {
+//         try {
+//             setIsLoading("Logging out...");
+//             await axiosInstance.post(apiUrls.logoutUser);
+//             setUser(null);
+//         } catch (err) {
+//             console.error(err);
+//         } finally {
+//             setIsLoading("");
+//         }
+//     };
+
+//     const UpdateUserProfile = async (userForm) => {
+//         try {
+//             setIsLoading("Updating profile...");
+//             const res = await axiosInstance.put(apiUrls.updateUser, userForm);
+//             if (res?.data?.success) {
+//                 setUser(res.data.data);
+//                 setProfileModalOpen(false);
+//             }
+//         } catch (err) {
+//             console.error(err);
+//         } finally {
+//             setIsLoading("");
+//         }
+//     };
+
+//     return (
+//         <>
+//             {isLoading && <Loader message={isLoading} />}
+//             <div className="flex flex-col lg:flex-row h-screen bg-gradient-to-br from-blue-100 to-indigo-200">
+//                 <MobileHeader
+//                     title="Team Calendar"
+//                     sidebarOpen={sidebarOpen}
+//                     setSidebarOpen={setSidebarOpen}
+//                 />
+//                 <Sidebar
+//                     sidebarOpen={sidebarOpen}
+//                     setSidebarOpen={setSidebarOpen}
+//                     user={user}
+//                     searchTerm={searchTerm}
+//                     setSearchTerm={setSearchTerm}
+//                     departmentFilter={departmentFilter}
+//                     setDepartmentFilter={setDepartmentFilter}
+//                     allUsers={allUsers}
+//                     filteredUsers={filteredUsers}
+//                     selectedUsers={selectedUsers}
+//                     toggleUserSelection={toggleUserSelection}
+//                     setProfileModalOpen={setProfileModalOpen}
+//                     handleLogout={handleLogout}
+//                 />
+
+//                 <main className="flex-1 overflow-auto p-4 lg:p-6">
+//                     <div className="max-w-full mx-auto">
+//                         <div className="mb-6 hidden md:block">
+//                             <h1 className="text-3xl font-bold text-gray-800">
+//                                 Team Calendar
+//                             </h1>
+//                             <p className="text-gray-600">
+//                                 Manage availability and view team schedules
+//                             </p>
+//                         </div>
+
+//                         <div
+//                             className={`grid gap-6 ${selectedUsers.length > 0 ? "lg:grid-cols-2" : "lg:grid-cols-1"
+//                                 }`}
+//                         >
+//                             <OwnCalendar
+//                                 user={user}
+//                                 calendarRef={calendarRef}
+//                                 currentView={currentView}
+//                                 setCurrentView={setCurrentView}
+//                                 events={events}
+//                                 handleDateSelect={handleDateTimeSelect}
+//                                 handleEventClick={handleEventClick}
+//                                 setCurrentRange={setCurrentRange}
+//                             />
+
+//                             {selectedUsers.map((u) => (
+//                                 <TeammateCalendar
+//                                     key={u.id}
+//                                     user={u}
+//                                     calendarRef={(el) =>
+//                                         (teammateCalendarRefs.current[u.id] = el)
+//                                     }
+//                                     events={userCalendars[u.id] || []}
+//                                     currentView={currentView}
+//                                     calendarRefAPI={teammateCalendarRefs.current[u.id]?.getApi()}
+//                                     onViewChange={(view) => setCurrentView(view)}
+//                                     removeCalendar={() => toggleUserSelection(u)}
+//                                 />
+//                             ))}
+//                         </div>
+//                     </div>
+//                 </main>
+
+//                 <AvailabilityModal
+//                     modalOpen={modalOpen}
+//                     setModalOpen={setModalOpen}
+//                     selectedEvent={selectedEvent}
+//                     form={form}
+//                     setForm={setForm}
+//                     editMode={editMode}
+//                     deleteMode={deleteMode}
+//                     setDeleteMode={setDeleteMode}
+//                     setEditMode={setEditMode}
+//                     rangeStart={rangeStart}
+//                     rangeEnd={rangeEnd}
+//                     setRangeStart={setRangeStart}
+//                     setRangeEnd={setRangeEnd}
+//                     errors={errors}
+//                     setErrors={setErrors}
+//                     handleSubmit={handleSubmit}
+//                     handleDelete={handleDelete}
+//                     isRecurring={!!selectedEvent?.ruleId}
+//                 />
+
+//                 <ProfileModal
+//                     profileModalOpen={profileModalOpen}
+//                     setProfileModalOpen={setProfileModalOpen}
+//                     editForm={{
+//                         name: user?.name || "",
+//                         department: user?.department || "",
+//                     }}
+//                     setEditForm={() => { }}
+//                     UpdateCurrentUser={UpdateUserProfile}
+//                 />
+//             </div>
+//         </>
+//     );
+// }

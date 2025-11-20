@@ -6,8 +6,10 @@ export const apiUrls = {
   updateUser: "/users/me",
   createAvailability: "/availability",
   getAllUsers: "/users",
-  updateAvailability: (id) => `/availability/${id}`,
-  deleteAvailability: (id) => `/availability/${id}`,
+  updateOneAvailability: (id) => `/availability/instance/${id}`,
+  updateAllAvailability: (id) => `/availability/instance/${id}/all`,
+  deleteOneAvailability: (id) => `/availability/instance/${id}`,
+  deleteAllAvailability: (id) => `/availability/instance/${id}/all`,
   getCurrentUserAvailability: (startTime, endTime) =>
     `/availability?start=${startTime}&end=${endTime}`,
   getOtherUserAvailability: (userId, startTime, endTime) =>

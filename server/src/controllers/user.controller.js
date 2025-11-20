@@ -4,7 +4,9 @@ import { responseMessage, updateUserSchema } from "../utils/utils.js";
 export const getCurrentUser = async (req, res) => {
   try {
     const result = await db.query(
-      "SELECT id, name, email, department, created_at FROM users WHERE id = $1",
+      `SELECT id, name, email, department, role, created_at 
+       FROM users 
+       WHERE id = $1`,
       [req.user.id]
     );
 
@@ -15,13 +17,13 @@ export const getCurrentUser = async (req, res) => {
       });
     }
 
-    res.status(200).json({
+    res.json({
       success: true,
       message: responseMessage.userFetchSuccess,
       data: result.rows[0],
     });
   } catch (err) {
-    console.error(err);
+    console.error("getCurrentUser error:", err);
     res.status(500).json({
       success: false,
       message: responseMessage.serverErrorFetchingUser,
@@ -34,17 +36,19 @@ export const updateCurrentUser = async (req, res) => {
     const parsed = updateUserSchema.safeParse(req.body);
 
     if (!parsed.success) {
-      const message = parsed.error.errors.map((e) => e.message).join(", ");
-      return res.status(400).json({ error: message });
+      return res.status(400).json({
+        success: false,
+        message: parsed.error.errors.map((e) => e.message).join(", "),
+      });
     }
 
     const { name, department } = parsed.data;
 
-    // Checking fields
     if (!name && !department) {
-      return res
-        .status(400)
-        .json({ success: false, message: responseMessage.noFieldProvided });
+      return res.status(400).json({
+        success: false,
+        message: responseMessage.noFieldProvided,
+      });
     }
 
     const result = await db.query(
@@ -53,23 +57,24 @@ export const updateCurrentUser = async (req, res) => {
            department = COALESCE($2, department),
            updated_at = NOW()
        WHERE id = $3
-       RETURNING id, name, email, department`,
+       RETURNING id, name, email, department, role`,
       [name, department, req.user.id]
     );
 
     if (result.rowCount === 0) {
-      return res
-        .status(404)
-        .json({ success: false, message: responseMessage.userNotFound });
+      return res.status(404).json({
+        success: false,
+        message: responseMessage.userNotFound,
+      });
     }
 
-    res.status(200).json({
+    res.json({
       success: true,
       message: responseMessage.userUpdatedSuccess,
       data: result.rows[0],
     });
   } catch (err) {
-    console.error(err);
+    console.error("updateCurrentUser error:", err);
     res.status(500).json({
       success: false,
       message: responseMessage.serverErrorUpdatingUser,
@@ -81,26 +86,32 @@ export const searchUser = async (req, res) => {
   try {
     const { search = "", dept = "" } = req.query;
 
-    let sql = "SELECT id, name, email, department FROM users";
+    let sql = `
+      SELECT id, name, email, department, role 
+      FROM users 
+      WHERE 1=1
+    `;
     const params = [];
 
-    if (search || dept) {
-      sql += " WHERE 1=1";
-
-      if (search) {
-        sql += ` AND (name ILIKE $${params.length + 1} OR email ILIKE $${
-          params.length + 1
-        })`;
-        params.push(`%${search}%`);
-      }
-
-      if (dept) {
-        sql += ` AND department = $${params.length + 1}`;
-        params.push(dept);
-      }
+    if (search) {
+      sql += ` AND (name ILIKE $${params.length + 1} OR email ILIKE $${
+        params.length + 1
+      })`;
+      params.push(`%${search}%`);
     }
 
+    if (dept) {
+      sql += ` AND department = $${params.length + 1}`;
+      params.push(dept);
+    }
+
+    // Optional: hide admins from regular users? Remove if you want everyone visible
+    // if (req.user.role !== "ADMIN") {
+    //   sql += ` AND role = 'USER'`;
+    // }
+
     const result = await db.query(sql, params);
+
     res.json({
       success: true,
       message: result.rows.length
@@ -109,7 +120,7 @@ export const searchUser = async (req, res) => {
       data: result.rows,
     });
   } catch (err) {
-    console.error(err);
+    console.error("searchUser error:", err);
     res.status(500).json({
       success: false,
       message: responseMessage.serverErrorFetchingUsers,

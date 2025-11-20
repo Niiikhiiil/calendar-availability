@@ -1,220 +1,607 @@
 import moment from "moment";
-import { Calendar, Plus, X, Repeat, Trash2, Save } from "lucide-react";
+import { useEffect } from "react";
+import DatePicker from "react-datepicker";
+import {
+  Calendar,
+  Plus,
+  X,
+  Repeat,
+  Trash2,
+  Save,
+  AlertCircle,
+} from "lucide-react";
 
 const AvailabilityModal = ({
-    modalOpen,
-    setModalOpen,
-    selectedEvent,
-    form,
-    setForm,
-    errors,
-    handleSubmit,
-    handleDelete
+  modalOpen,
+  setModalOpen,
+  selectedEvent,
+  editMode,
+  setEditMode,
+  rangeStart,
+  setRangeStart,
+  rangeEnd,
+  setRangeEnd,
+  deleteMode,
+  setDeleteMode,
+  form,
+  setForm,
+  errors,
+  setErrors,
+  handleSubmit,
+  handleDelete,
+  isRecurring = false,
 }) => {
-    if (!modalOpen) return null;
+  if (!modalOpen) return null;
 
-    return (
-        <div className="fixed inset-0 z-50 flex justify-center items-start p-4 bg-black/50 backdrop-blur-sm overflow-y-auto">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full mt-8 sm:mt-20 animate-fadeIn">
+  const isEdit = !!selectedEvent;
 
-                {/* Header */}
-                <div className="sticky top-0 bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4 rounded-t-2xl flex items-center justify-between shadow-md">
-                    <div className="flex items-center gap-3">
-                        {selectedEvent ? (
-                            <Calendar className="w-6 h-6 text-white" />
-                        ) : (
-                            <Plus className="w-6 h-6 text-white" />
-                        )}
-                        <h2 className="text-xl font-bold text-white">
-                            {selectedEvent ? "Edit Availability" : "New Availability"}
-                        </h2>
+  // 12 HOUR TIME SLOTS FOR SELECT INPUTS
+  const timeSlots = [];
+  for (let h = 0; h < 24; h++) {
+    for (let m = 0; m < 60; m += 30) {
+      const time = moment().hour(h).minute(m);
+      timeSlots.push({
+        value: time.format("HH:mm"), // → backend: "13:30"
+        label: time.format("h:mm A"), // → UI: "1:30 PM"
+      });
+    }
+  }
+
+  const minDate = moment().startOf("day").toDate();
+
+  // VALIDATIONS
+  useEffect(() => {
+    const newErrors = {};
+
+    if (form?.startDate && form?.endDate && form?.startDate > form?.endDate) {
+      newErrors.date = "End date must be same or after start date";
+    }
+
+    if (form?.timeStart && form?.timeEnd && form?.timeStart >= form?.timeEnd) {
+      newErrors.time = "End time must be after start time";
+    }
+
+    setErrors(newErrors);
+  }, [
+    form?.startDate,
+    form?.endDate,
+    form?.timeStart,
+    form?.timeEnd,
+    setErrors,
+  ]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
+      <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full mt-10">
+        {/* HEADER  */}
+        <div className="bg-gradient-to-r from-indigo-600 to-purple-700 px-6 py-5 rounded-t-3xl flex justify-between items-center">
+          <div className="flex items-center gap-3">
+            {isEdit ? (
+              <Calendar className="w-7 h-7 text-white" />
+            ) : (
+              <Plus className="w-7 h-7 text-white" />
+            )}
+            <h2 className="text-2xl font-bold text-white">
+              {isEdit ? "Edit Availability" : "New Availability"}
+            </h2>
+          </div>
+          <button
+            onClick={() => setModalOpen(false)}
+            className="p-2 hover:bg-white/20 rounded-xl"
+          >
+            <X className="w-6 h-6 text-white" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-6">
+          {/* RECURRING NOTICE  */}
+          {isRecurring && (
+            <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-4 flex items-center gap-3 text-amber-800">
+              <Repeat className="w-6 h-6" />
+              <span className="font-bold">
+                This is part of a recurring series
+              </span>
+            </div>
+          )}
+
+          {selectedEvent?.extendedProps?.isRecurring && (
+            <div className="mb-4 p-4 bg-gray-50 rounded-lg">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Edit recurrence:
+              </label>
+              <div className="space-y-2">
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="editMode"
+                    value="this"
+                    checked={editMode === "this"}
+                    onChange={(e) => setEditMode(e.target.value)}
+                    className="mr-2"
+                  />
+                  <span>This occurrence only</span>
+                </label>
+
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="editMode"
+                    value="future"
+                    checked={editMode === "future"}
+                    onChange={(e) => setEditMode(e.target.value)}
+                    className="mr-2"
+                  />
+                  <span>This and all following</span>
+                </label>
+
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="editMode"
+                    value="all"
+                    checked={editMode === "all"}
+                    onChange={(e) => setEditMode(e.target.value)}
+                    className="mr-2"
+                  />
+                  <span>Entire series</span>
+                </label>
+
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="editMode"
+                    value="range"
+                    checked={editMode === "range"}
+                    onChange={(e) => setEditMode(e.target.value)}
+                    className="mr-2"
+                  />
+                  <span>Custom range</span>
+                </label>
+
+                {editMode === "range" && (
+                  <div className="mt-3 ml-6 grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-gray-600">
+                        From
+                      </label>
+                      <input
+                        type="date"
+                        value={rangeStart}
+                        onChange={(e) => setRangeStart(e.target.value)}
+                        className="w-full px-3 py-2 border rounded-md"
+                      />
                     </div>
+                    <div>
+                      <label className="block text-xs text-gray-600">To</label>
+                      <input
+                        type="date"
+                        value={rangeEnd}
+                        min={rangeStart}
+                        onChange={(e) => setRangeEnd(e.target.value)}
+                        className="w-full px-3 py-2 border rounded-md"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
-                    <button
-                        onClick={() => setModalOpen(false)}
-                        className="p-1 hover:bg-white/20 rounded-lg transition"
-                    >
-                        <X className="w-5 h-5 text-white" />
-                    </button>
+          {/* Delete Scope Selector */}
+          {selectedEvent?.extendedProps?.isRecurring && (
+            <div className="mb-4 p-4 bg-red-50 rounded-lg border border-red-200">
+              <label className="block text-sm font-medium text-red-800 mb-2">
+                Delete options:
+              </label>
+              <div className="space-y-2">
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="deleteMode"
+                    value="this"
+                    checked={deleteMode === "this"}
+                    onChange={(e) => setDeleteMode(e.target.value)}
+                    className="mr-2"
+                  />
+                  <span className="text-sm">This occurrence only</span>
+                </label>
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="deleteMode"
+                    value="future"
+                    checked={deleteMode === "future"}
+                    onChange={(e) => setDeleteMode(e.target.value)}
+                    className="mr-2"
+                  />
+                  <span className="text-sm">This and following</span>
+                </label>
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="deleteMode"
+                    value="all"
+                    checked={deleteMode === "all"}
+                    onChange={(e) => setDeleteMode(e.target.value)}
+                    className="mr-2"
+                  />
+                  <span className="text-sm">Entire series</span>
+                </label>
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="deleteMode"
+                    value="range"
+                    checked={deleteMode === "range"}
+                    onChange={(e) => setDeleteMode(e.target.value)}
+                    className="mr-2"
+                  />
+                  <span className="text-sm">Custom range</span>
+                </label>
+                {deleteMode === "range" && (
+                  <div className="mt-3 ml-6 grid grid-cols-2 gap-3">
+                    <input
+                      type="date"
+                      value={rangeStart}
+                      onChange={(e) => setRangeStart(e.target.value)}
+                      className="px-3 py-2 border rounded-md text-sm"
+                    />
+                    <input
+                      type="date"
+                      value={rangeEnd}
+                      min={rangeStart}
+                      onChange={(e) => setRangeEnd(e.target.value)}
+                      className="px-3 py-2 border rounded-md text-sm"
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* DESCRIPTION */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
+              Description
+            </label>
+            <input
+              type="text"
+              value={form?.description || ""}
+              onChange={(e) =>
+                setForm({ ...form, description: e.target.value })
+              }
+              placeholder="e.g., Team standup"
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+            />
+          </div>
+          {errors?.description && (
+            <p className="text-red-600 text-sm flex items-center gap-1">
+              <AlertCircle className="w-4 h-4" /> {errors?.description}
+            </p>
+          )}
+
+          {/* DATE SELECTION  */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                Start Date
+              </label>
+              <DatePicker
+                selected={
+                  form?.startDate ? moment(form?.startDate).toDate() : null
+                }
+                onChange={(date) =>
+                  setForm({
+                    ...form,
+                    startDate: moment(date).format("YYYY-MM-DD"),
+                  })
+                }
+                minDate={minDate}
+                dateFormat="MMM dd, yyyy"
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 outline-none cursor-pointer"
+                placeholderText="Select date"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                End Date
+              </label>
+              <DatePicker
+                selected={form?.endDate ? moment(form?.endDate).toDate() : null}
+                onChange={(date) =>
+                  setForm({
+                    ...form,
+                    endDate: date ? moment(date).format("YYYY-MM-DD") : "",
+                  })
+                }
+                minDate={
+                  form?.startDate ? moment(form?.startDate).toDate() : minDate
+                }
+                dateFormat="MMM dd, yyyy"
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 outline-none cursor-pointer"
+                placeholderText="Same day"
+              />
+            </div>
+          </div>
+          {errors?.date && (
+            <p className="text-red-600 text-sm flex items-center gap-1">
+              <AlertCircle className="w-4 h-4" /> {errors?.date}
+            </p>
+          )}
+
+          {form.status !== "LEAVE" && (
+            <>
+              {/* TIME SELECTION  */}
+              <div className="grid grid-cols-2 gap-4">
+                {/* Start Time */}
+                <div>
+                  <label
+                    name="startTime"
+                    className="block text-sm font-semibold text-gray-700 mb-2"
+                  >
+                    Start Time
+                  </label>
+                  <select
+                    value={form?.timeStart || ""}
+                    onChange={(e) =>
+                      setForm({ ...form, timeStart: e.target.value })
+                    }
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                  >
+                    <option value="">Select start time</option>
+                    {timeSlots.map(({ value, label }) => {
+                      // const isPast =
+                      //     form.startDate &&
+                      //     moment(form.startDate).isSame(moment(), "day") &&
+                      //     moment(value, "HH:mm").isBefore(moment());
+                      return (
+                        <option key={value} value={value}>
+                          {label}
+                        </option>
+                      );
+                    })}
+                  </select>
                 </div>
 
-                {/* Body */}
-                <div className="p-6 space-y-5">
+                {/* END TIME  */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    End Time
+                  </label>
+                  <select
+                    value={form?.timeEnd || ""}
+                    onChange={(e) =>
+                      setForm({ ...form, timeEnd: e.target.value })
+                    }
+                    disabled={!form?.timeStart}
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none disabled:bg-gray-100"
+                  >
+                    <option value="">
+                      {form?.timeStart
+                        ? "Select end time"
+                        : "First select start time"}
+                    </option>
+                    {timeSlots
+                      .filter(({ value }) => {
+                        if (!form?.timeStart) return false;
+                        return moment(value, "HH:mm").isAfter(
+                          moment(form?.timeStart, "HH:mm")
+                        );
+                      })
+                      .map(({ value, label }) => (
+                        <option key={value * 3} value={value}>
+                          {label}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              </div>
+            </>
+          )}
+          {errors?.time && (
+            <p className="text-red-600 text-sm flex items-center gap-1">
+              <AlertCircle className="w-4 h-4" /> {errors?.time}
+            </p>
+          )}
 
-                    {selectedEvent && (form?.recurrence !== "NONE" || !form?.recurrence) && (
-                        <div>
-                            <span className="text-sm text-amber-950">
-                                <Repeat className="w-5 h-5 inline-block mr-2 pb-1" />
-                                This is a recurring event!
-                            </span>
-                        </div>
-                    )}
+          {/* MAKE LEAVE  */}
+          <div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form?.status === "LEAVE" ? true : false}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    status: e.target.checked ? "LEAVE" : "AVAILABLE",
+                  })
+                }
+                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span className="text-sm text-gray-700">Make Leave</span>
+            </label>
+          </div>
 
-                    {/* Description */}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Description
+          {form.status !== "LEAVE" && (
+            <>
+              {/* STATUS  */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Status
+                </label>
+                <select
+                  value={form?.status}
+                  onChange={(e) => setForm({ ...form, status: e.target.value })}
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                >
+                  <option value="AVAILABLE">Available (Green)</option>
+                  <option value="BUSY">Busy (Red)</option>
+                  <option value="TENTATIVE">Tentative (Yellow)</option>
+                </select>
+              </div>
+
+              {/* RECURRENCE */}
+              <div className="border-t-2 border-gray-100 pt-6">
+                <label className="block text-sm font-semibold text-gray-700 mb-4">
+                  Recurrence
+                </label>
+                <select
+                  value={form?.recurrence?.freq || "NONE"}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === "NONE") {
+                      setForm({ ...form, recurrence: undefined });
+                    } else {
+                      setForm({
+                        ...form,
+                        recurrence: {
+                          freq: val,
+                          interval: 1,
+                          byDay: [],
+                          until: "",
+                        },
+                      });
+                    }
+                  }}
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                >
+                  <option value="NONE">No recurrence</option>
+                  <option value="DAILY">Daily</option>
+                  <option value="WEEKLY">Weekly</option>
+                  <option value="MONTHLY">Monthly</option>
+                </select>
+
+                {/* RECURRENCE OPTIONS */}
+                {form.recurrence && form.recurrence.freq !== "NONE" && (
+                  <div className="mt-5 p-5 bg-gradient-to-br from-indigo-50 to-purple-50 rounded-2xl space-y-5">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-sm font-medium text-gray-700">
+                          Repeat every
                         </label>
                         <input
-                            type="text"
-                            placeholder="Enter description..."
-                            value={form.description}
-                            onChange={(e) => setForm({ ...form, description: e.target.value })}
-                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                          type="number"
+                          min="1"
+                          value={form?.recurrence?.interval}
+                          onChange={(e) =>
+                            setForm({
+                              ...form,
+                              recurrence: {
+                                ...form?.recurrence,
+                                interval: Number(e.target.value) || 1,
+                              },
+                            })
+                          }
+                          className="w-full mt-1 px-3 py-2 border border-indigo-300 rounded-lg focus:border-indigo-500 outline-none"
                         />
-                        {errors.description && (
-                            <p className="text-red-600 text-xs mt-1">{errors?.description}</p>
-                        )}
-                    </div>
-
-                    {/* Start / End Time */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                                Start Time
-                            </label>
-                            <input
-                                type="datetime-local"
-                                value={form.start.slice(0, 16)}
-                                onChange={(e) => setForm({ ...form, start: e.target.value })}
-                                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                                required
-                            />
-                            {errors.start && (
-                                <p className="text-red-600 text-xs mt-1">{errors?.start}</p>
-                            )}
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                                End Time
-                            </label>
-                            <input
-                                type="datetime-local"
-                                value={form.end.slice(0, 16)}
-                                onChange={(e) => setForm({ ...form, end: e.target.value })}
-                                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                                required
-                            />
-                            {errors.end && (
-                                <p className="text-red-600 text-xs mt-1">{errors.end}</p>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Status */}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Status
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-gray-700">
+                          Ends on
                         </label>
-                        <select
-                            value={form.status}
-                            onChange={(e) => setForm({ ...form, status: e.target.value })}
-                            className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 outline-none"
-                        >
-                            <option value="AVAILABLE">Available</option>
-                            <option value="BUSY">Busy</option>
-                            <option value="TENTATIVE">Tentative</option>
-                        </select>
+                        <DatePicker
+                          selected={
+                            form?.recurrence?.until
+                              ? moment(form?.recurrence?.until).toDate()
+                              : null
+                          }
+                          onChange={(date) =>
+                            setForm({
+                              ...form,
+                              recurrence: {
+                                ...form?.recurrence,
+                                until: date
+                                  ? moment(date).format("YYYY-MM-DD")
+                                  : "",
+                              },
+                            })
+                          }
+                          minDate={moment(form?.startDate)
+                            .add(1, "day")
+                            .toDate()}
+                          className="w-full mt-1 px-3 py-2 border border-indigo-300 rounded-lg focus:border-indigo-500 outline-none"
+                          placeholderText="No end date"
+                        />
+                      </div>
                     </div>
 
-                    {/* Recurrence */}
-                    <div className="space-y-4 pt-2">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                                Recurrence
-                            </label>
-                            <select
-                                value={form.recurrence}
-                                onChange={(e) => setForm({ ...form, recurrence: e.target.value })}
-                                className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 outline-none"
-                            >
-                                <option value="NONE">None</option>
-                                <option value="DAILY">Daily</option>
-                                <option value="WEEKLY">Weekly</option>
-                                <option value="MONTHLY">Monthly</option>
-                            </select>
+                    {/* WEEKLY OPTIONS */}
+                    {form?.recurrence?.freq === "WEEKLY" && (
+                      <div>
+                        <label className="text-sm font-medium text-gray-700 block mb-3">
+                          Repeat on
+                        </label>
+                        <div className="flex flex-wrap gap-3">
+                          {["MO", "TU", "WE", "TH", "FR", "SA", "SU"].map(
+                            (day) => (
+                              <button
+                                key={day}
+                                type="button"
+                                onClick={() => {
+                                  const byDay =
+                                    form?.recurrence?.byDay.includes(day)
+                                      ? form?.recurrence?.byDay?.filter(
+                                          (d) => d !== day
+                                        )
+                                      : [...form?.recurrence?.byDay, day];
+                                  setForm({
+                                    ...form,
+                                    recurrence: { ...form?.recurrence, byDay },
+                                  });
+                                }}
+                                className={`px-4 py-2 rounded-lg font-medium transition ${
+                                  form?.recurrence?.byDay.includes(day)
+                                    ? "bg-indigo-600 text-white shadow-lg"
+                                    : "bg-white border-2 border-indigo-300 text-indigo-700 hover:bg-indigo-50"
+                                }`}
+                              >
+                                {day}
+                              </button>
+                            )
+                          )}
                         </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
 
-                        {form.recurrence !== "NONE" && (
-                            <>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                                            Repeat Every
-                                        </label>
-                                        <input
-                                            type="number"
-                                            min="1"
-                                            value={form.interval}
-                                            onChange={(e) => setForm({
-                                                ...form,
-                                                interval: parseInt(e.target.value) || 1
-                                            })}
-                                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                                            Ends On
-                                        </label>
-                                        <input
-                                            type="date"
-                                            value={form.until}
-                                            onChange={(e) => setForm({ ...form, until: e.target.value })}
-                                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                                        />
-                                        {errors?.until && (
-                                            <p className="text-red-600 text-xs mt-1">{errors?.until}</p>
-                                        )}
-                                    </div>
-                                </div>
-
-                                <p className="text-xs text-gray-500">
-                                    {form.recurrence === "DAILY" && `Repeats every ${form.interval} day(s)`}
-                                    {form.recurrence === "WEEKLY" && `Repeats every ${form.interval} week(s)`}
-                                    {form.recurrence === "MONTHLY" && `Repeats every ${form.interval} month(s)`}
-                                    {form.until && ` until ${moment(form.until).format("MMM D, YYYY")}`}
-                                </p>
-                            </>
-                        )}
-                    </div>
-
-                    {/* Footer Buttons */}
-                    <div className="flex flex-col sm:flex-row gap-3 pt-4">
-                        {selectedEvent && (
-                            <button
-                                onClick={handleDelete}
-                                className="flex items-center justify-center gap-2 px-5 py-3 bg-red-500 text-white rounded-lg hover:bg-red-600 shadow-sm"
-                            >
-                                <Trash2 className="w-4 h-4" />
-                                Delete
-                            </button>
-                        )}
-
-                        <div className="flex gap-3 ml-auto w-full sm:w-auto">
-                            <button
-                                onClick={() => setModalOpen(false)}
-                                className="flex-1 sm:flex-none px-5 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
-                            >
-                                Cancel
-                            </button>
-
-                            <button
-                                onClick={handleSubmit}
-                                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 shadow-sm"
-                            >
-                                <Save className="w-4 h-4" />
-                                Save
-                            </button>
-                        </div>
-                    </div>
-
-                </div>
-            </div>
+          {/* BUTTONS  */}
+          <div className="flex justify-end gap-4 pt-8 border-t">
+            {isEdit && (
+              <button
+                onClick={handleDelete}
+                className="px-6 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 font-bold flex items-center gap-2 shadow-lg"
+              >
+                <Trash2 className="w-5 h-5" /> Delete
+              </button>
+            )}
+            <button
+              onClick={() => setModalOpen(false)}
+              className="px-6 py-3 bg-gray-200 text-gray-800 rounded-xl hover:bg-gray-300 font-bold"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={
+                Object.keys(errors).length > 0 ||
+                !form?.startDate ||
+                !form?.timeStart ||
+                !form?.timeEnd
+              }
+              className="px-8 py-3 bg-gradient-to-r from-indigo-600 to-purple-700 text-white rounded-xl hover:from-indigo-700 hover:to-purple-800 font-bold shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              <Save className="w-5 h-5" />
+              {isEdit ? "Update" : "Create"} Availability
+            </button>
+          </div>
         </div>
-    );
+      </div>
+    </div>
+  );
 };
 
 export default AvailabilityModal;

@@ -6,9 +6,17 @@ const cookieName = process.env.COOKIE_NAME || "token";
 const jwtSecret = process.env.JWT_SECRET || "secret";
 
 export function signToken(payload) {
-  return jwt.sign(payload, jwtSecret, {
-    expiresIn: process.env.JWT_EXPIRES_IN || "7d",
-  });
+  return jwt.sign(
+    {
+      id: payload.id,
+      email: payload.email,
+      role: payload.role || "USER",
+    },
+    jwtSecret,
+    {
+      expiresIn: process.env.JWT_EXPIRES_IN || "7d",
+    }
+  );
 }
 
 export function authMiddleware(req, res, next) {

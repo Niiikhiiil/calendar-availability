@@ -1,290 +1,701 @@
 import db from "../db.js";
-import { availabilitySchema, responseMessage } from "../utils/utils.js";
 import moment from "moment";
-import rrule from "rrule";
-const { rrulestr } = rrule;
+import { createAvailabilitySchema } from "../utils/utils.js";
 
+// Generate dates based on RRULE-like params
+const generateDates = (start, until, freq, interval = 1, byDay = null) => {
+  const results = [];
+  const startDate = moment(start).startOf("day");
+  const endDate = until
+    ? moment(until).endOf("day")
+    : moment(start).add(2, "years");
+
+  const weekdays = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
+
+  // --- DAILY ---
+  if (freq === "DAILY") {
+    let current = startDate.clone();
+    while (current.isSameOrBefore(endDate)) {
+      results.push(current.format("YYYY-MM-DD"));
+      current.add(interval, "days");
+    }
+    return results;
+  }
+
+  // --- WEEKLY (supports TU,FR or any list) ---
+  if (freq === "WEEKLY") {
+    const selectedDays = byDay || [];
+
+    let base = startDate.clone();
+
+    while (base.isSameOrBefore(endDate)) {
+      selectedDays.forEach((day) => {
+        const weekdayIndex = weekdays.indexOf(day);
+
+        const date = base.clone().weekday(weekdayIndex);
+
+        if (date.isSameOrAfter(startDate) && date.isSameOrBefore(endDate)) {
+          results.push(date.format("YYYY-MM-DD"));
+        }
+      });
+
+      base.add(interval, "weeks");
+    }
+
+    return [...new Set(results)].sort();
+  }
+
+  // --- MONTHLY ---
+  if (freq === "MONTHLY") {
+    let current = startDate.clone();
+
+    while (current.isSameOrBefore(endDate)) {
+      results.push(current.format("YYYY-MM-DD"));
+      current.add(interval, "months");
+    }
+
+    return results;
+  }
+
+  return [];
+};
+
+// Check for time overlaps on given dates
+const checkAvailabilityConflicts = async (userId, datesWithTime) => {
+  if (datesWithTime.length === 0) return [];
+
+  const dates = [...new Set(datesWithTime.map((d) => d.date))];
+
+  const result = await db.query(
+    `SELECT instance_date::text, time_start::text, time_end::text, status, description
+     FROM availability_instances
+     WHERE user_id = $1
+       AND instance_date = ANY($2)
+       AND (exception_type IS NULL OR exception_type != 'deleted')`,
+    [userId, dates]
+  );
+
+  const existing = result.rows.reduce((acc, row) => {
+    const date = row.instance_date;
+    if (!acc[date]) acc[date] = [];
+    acc[date].push({
+      start: row.time_start.slice(0, 8),
+      end: row.time_end.slice(0, 8),
+      status: row.status,
+      description: row.description || "",
+    });
+    return acc;
+  }, {});
+
+  const conflicts = [];
+
+  for (const { date, timeStart, timeEnd } of datesWithTime) {
+    if (!existing[date]) continue;
+
+    for (const slot of existing[date]) {
+      const eStart = slot.start;
+      const eEnd = slot.end;
+
+      // Overlap: not (newEnd <= existingStart OR newStart >= existingEnd)
+      if (timeStart < eEnd && timeEnd > eStart) {
+        conflicts.push({
+          date,
+          new: { start: timeStart, end: timeEnd },
+          existing: {
+            start: eStart,
+            end: eEnd,
+            status: slot.status,
+            description: slot.description,
+          },
+        });
+      }
+    }
+  }
+
+  return conflicts;
+};
+
+// CREATE AVAILABILITY — WITH PARTIAL SUCCESS
 export const createAvailability = async (req, res) => {
   try {
-    const parsed = availabilitySchema.parse(req.body);
-    const { start, end, status, recurringRule, description } = parsed;
+    const parsed = createAvailabilitySchema.parse(req.body);
+    const {
+      startDate,
+      endDate,
+      timeStart,
+      timeEnd,
+      status,
+      description,
+      recurrence,
+      applyToRange,
+    } = parsed;
+    const userId = req.user.id;
 
-    // For the overlapping event check
-    // const overlapCheck = await db.query(
-    //   `SELECT * FROM availability
-    //    WHERE user_id = $1
-    //    AND DATE(start_time) = DATE($2)
-    //    AND (
-    //   (start_time, end_time) OVERLAPS ($2::timestamp, $3::timestamp))`,
-    //   [req.user.id, start, end]
-    // );
+    let candidateDates = [];
 
-    // if (overlapCheck.rows.length > 0) {
-    //   return res.status(400).json({
-    //     success: false,
-    //     message: "You already have availability for this time range.",
-    //   });
-    // }
+    if (recurrence) {
+      const genStart = applyToRange?.start
+        ? moment(applyToRange.start)
+        : moment(startDate);
+      const genUntil =
+        applyToRange?.end ||
+        recurrence.until ||
+        moment(startDate).add(2, "years");
 
-    // Add new availability event
-    const result = await db.query(
-      `INSERT INTO availability (user_id, start_time, end_time, status, recurring_rule, description)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [req.user.id, start, end, status, recurringRule || null, description]
+      candidateDates = generateDates(
+        genStart.format("YYYY-MM-DD"),
+        genUntil,
+        recurrence.freq,
+        recurrence.interval || 1,
+        recurrence.byDay || null
+      );
+    } else {
+      const start = moment(startDate);
+      const end = endDate ? moment(endDate) : start;
+      for (let d = start.clone(); d.isSameOrBefore(end); d.add(1, "day")) {
+        candidateDates.push(d.format("YYYY-MM-DD"));
+      }
+    }
+
+    if (candidateDates.length === 0) {
+      return res
+        .status(400)
+        .json({ success: false, message: "No dates to create" });
+    }
+
+    // Conflict detection
+    const datesWithTime = candidateDates.map((date) => ({
+      date,
+      timeStart,
+      timeEnd,
+    }));
+    const allConflicts = await checkAvailabilityConflicts(
+      userId,
+      datesWithTime
     );
 
-    // For realtime checking and emmiting
-    const io = req.app.get("io");
-    if (io) io.emit("availability-updated", { userId: req.user.id });
+    let datesToCreate = candidateDates;
+    let skippedDates = [];
+    let conflictDetails = "";
 
-    res.status(201).json({
-      success: true,
-      message: responseMessage.availabilityCreatedSuccess,
-      data: result.rows[0],
-    });
+    if (allConflicts.length > 0) {
+      const conflictedSet = new Set(allConflicts.map((c) => c.date));
+      skippedDates = [...conflictedSet];
+      datesToCreate = candidateDates.filter((d) => !conflictedSet.has(d));
+
+      conflictDetails =
+        allConflicts
+          .slice(0, 10)
+          .map(
+            (c) =>
+              `${c.date}: ${c.new.start.slice(0, 5)}–${c.new.end.slice(
+                0,
+                5
+              )} overlaps`
+          )
+          .join(", ") + (allConflicts.length > 10 ? " and more..." : "");
+
+      if (datesToCreate.length === 0) {
+        return res.status(409).json({
+          success: false,
+          message: "All dates conflict with existing availability",
+          details: conflictDetails,
+        });
+      }
+    }
+
+    let ruleId = null;
+
+    if (datesToCreate.length > 0) {
+      if (recurrence) {
+        const ruleRes = await db.query(
+          `INSERT INTO availability_rules 
+           (user_id, start_date, end_date, time_start, time_end, status, description, freq, interval, by_day)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+           RETURNING id`,
+          [
+            userId,
+            startDate,
+            recurrence.until || null,
+            timeStart,
+            timeEnd,
+            status,
+            description || null,
+            recurrence.freq,
+            recurrence.interval || 1,
+            recurrence.byDay || null,
+          ]
+        );
+        ruleId = ruleRes.rows[0].id;
+
+        for (const date of datesToCreate) {
+          await db.query(
+            `INSERT INTO availability_instances 
+             (rule_id, user_id, instance_date, time_start, time_end, status, is_exception, exception_type, description)
+             SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9
+             WHERE NOT EXISTS (
+               SELECT 1 FROM availability_instances 
+               WHERE rule_id = $1 AND instance_date = $3
+             )`,
+            [
+              ruleId,
+              userId,
+              date,
+              timeStart,
+              timeEnd,
+              status,
+              false,
+              null,
+              description,
+            ]
+          );
+        }
+      } else {
+        for (const date of datesToCreate) {
+          await db.query(
+            `INSERT INTO availability_instances 
+             (rule_id, user_id, instance_date, time_start, time_end, status, is_exception, exception_type, description)
+             SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9
+             WHERE NOT EXISTS (
+               SELECT 1 FROM availability_instances 
+               WHERE user_id = $2 AND instance_date = $3 AND time_start = $4 AND time_end = $5
+             )`,
+            [
+              null,
+              userId,
+              date,
+              timeStart,
+              timeEnd,
+              status,
+              false,
+              null,
+              description || null,
+            ]
+          );
+        }
+      }
+
+      const io = req.app.get("io");
+      if (io) io.emit("availability-updated", { userId });
+
+      if (allConflicts.length > 0) {
+        return res.status(201).json({
+          success: true,
+          message: `Created on ${datesToCreate.length} date(s). Skipped ${skippedDates.length} conflicting date(s).`,
+          createdDates: datesToCreate,
+          skippedDates,
+          warning: "Partial creation due to conflicts",
+          details: conflictDetails,
+        });
+      }
+
+      return res.status(201).json({
+        success: true,
+        message: "Availability created successfully",
+        createdDates: datesToCreate,
+        ruleId,
+      });
+    }
   } catch (err) {
-    if (err.errors) {
+    if (err.name === "ZodError") {
       return res.status(400).json({
         success: false,
         message: err.errors.map((e) => e.message).join(", "),
       });
     }
-    console.error(err);
-    res.status(500).json({
-      success: false,
-      message: responseMessage.serverErrorCreatingAvailability,
-    });
+    console.error("createAvailability error:", err);
+    res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
+// GET AVAILABILITY
 export const getAvailability = async (req, res) => {
   try {
-    const { userId, start, end } = req.query;
+    const { start, end, userId } = req.query;
+    if (!start || !end)
+      return res
+        .status(400)
+        .json({ success: false, message: "start/end required" });
 
-    if (!start || !end) {
-      return res.status(400).json({
-        success: false,
-        message: responseMessage.startTimeandEndTimeRequired,
-      });
-    }
+    const startDate = moment(start).format("YYYY-MM-DD");
+    const endDate = moment(end).format("YYYY-MM-DD");
 
-    // Ensure full day coverage for the range
-    const rangeStart = moment(start).startOf("day").toDate();
-    const rangeEnd = moment(end).endOf("day").toDate();
+    const targetUserIds =
+      req.user.role === "ADMIN" && userId
+        ? String(userId).split(",")
+        : [req.user.id];
 
-    let users = [];
-    if (userId) {
-      users = Array.isArray(userId) ? userId : String(userId).split(",");
-    } else {
-      users = [req.user.id];
-    }
+    const result = await db.query(
+      `SELECT 
+         i.id, i.rule_id, i.instance_date::text, i.time_start, i.time_end, 
+         i.status, i.description, i.is_exception, i.exception_type,
+         u.name AS user_name, u.id AS user_id
+       FROM availability_instances i
+       JOIN users u ON i.user_id = u.id
+       WHERE i.user_id = ANY($1)
+         AND i.instance_date BETWEEN $2 AND $3
+         AND (i.exception_type IS NULL OR i.exception_type != 'deleted')
+       ORDER BY i.instance_date, i.time_start`,
+      [targetUserIds, startDate, endDate]
+    );
 
-    // Query both normal and recurring events
-    const getEventQuery = `
-      SELECT * 
-      FROM availability 
-      WHERE user_id = ANY($3::uuid[])
-        AND (
-          (start_time <= $2 AND end_time >= $1)
-          OR recurring_rule IS NOT NULL
-        )
-    `;
-
-    const result = await db.query(getEventQuery, [rangeStart, rangeEnd, users]);
-    const rows = result.rows;
-
-    const events = [];
-
-    for (const r of rows) {
-      const durationMs =
-        new Date(r.end_time).getTime() - new Date(r.start_time).getTime();
-
-      if (r.recurring_rule) {
-        try {
-          const options = rrulestr(r.recurring_rule, {
-            forceset: true,
-            dtstart: new Date(r.start_time),
-          });
-
-          const occs = options.between(rangeStart, rangeEnd, true);
-
-          for (const occ of occs) {
-            const occEnd = new Date(occ.getTime() + durationMs);
-
-            events.push({
-              id: `${r.id}::${occ.toISOString()}`,
-              availabilityId: r.id,
-              userId: r.user_id,
-              start: occ.toISOString(),
-              end: occEnd.toISOString(),
-              status: r.status,
-              recurring: true,
-              recurringRule: r.recurring_rule,
-              originalStart: r.start_time,
-              originalEnd: r.end_time,
-              description: r.description,
-            });
-          }
-        } catch (err) {
-          console.error("Failed to expand RRULE for availability", r.id, err);
-        }
-      } else {
-        // Normal event
-        events.push({
-          id: r.id,
-          availabilityId: r.id,
-          userId: r.user_id,
-          start: r.start_time,
-          end: r.end_time,
-          status: r.status,
-          recurring: false,
-          recurringRule: null,
-          description: r.description,
-        });
-      }
-    }
-
-    // Add color mapping
-    const mapped = events.map((e) => {
-      let backgroundColor = "";
-      let borderColor = "";
-
-      if (e.status === "AVAILABLE") {
-        backgroundColor = "#34D399";
-        borderColor = "#10B981";
-      } else if (e.status === "BUSY") {
-        backgroundColor = "#F87171";
-        borderColor = "#EF4444";
-      } else {
-        backgroundColor = "#FBBF24";
-        borderColor = "#F59E0B";
-      }
+    const events = result.rows.map((r) => {
+      const startISO = `${r.instance_date}T${r.time_start
+        .toString()
+        .slice(0, 8)}`;
+      const endISO = `${r.instance_date}T${r.time_end.toString().slice(0, 8)}`;
 
       return {
-        id: e.id,
-        status: e.status,
-        start: e.start,
-        end: e.end,
-        description: e.description,
-        backgroundColor,
-        borderColor,
-        recurringRule: e.recurringRule,
+        id: r.id,
+        title: r.status,
+        start: startISO,
+        end: endISO,
+        backgroundColor:
+          r.status === "AVAILABLE"
+            ? "#34D399"
+            : r.status === "BUSY"
+            ? "#F87171"
+            : "#FBBF24",
+        borderColor:
+          r.status === "AVAILABLE"
+            ? "#10B981"
+            : r.status === "BUSY"
+            ? "#EF4444"
+            : "#F59E0B",
         extendedProps: {
-          availabilityId: e.availabilityId,
-          userId: e.userId,
-          status: e.status,
-          recurring: e.recurring,
+          description: r.description || "",
+          instanceId: r.id,
+          ruleId: r.rule_id || null,
+          isRecurring: !!r.rule_id,
+          userId: r.user_id,
+          userName: r.user_name,
+          isException: r.is_exception,
         },
       };
     });
 
-    res.json({
-      success: true,
-      message: responseMessage.availabilityFetchedSuccess,
-      data: mapped,
-    });
+    res.json({ success: true, data: events });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({
-      success: false,
-      message: responseMessage.serverErrorFetchingAvailability,
-    });
+    console.error("getAvailability error:", err);
+    res.status(500).json({ success: false });
   }
 };
 
+// UPDATE AVAILABILITY — FULLY FLEXIBLE
 export const updateAvailability = async (req, res) => {
   try {
-    // Getting id from simple and recurring events
-    let id = req.params.id;
-    if (id.includes("::")) {
-      id = id.split("::")[0];
+    const { instanceId } = req.params;
+    const {
+      timeStart,
+      timeEnd,
+      status,
+      description,
+      recurrence,
+      applyFromDate,
+      applyToRange,
+    } = req.body;
+    const isAll = req.path.endsWith("/all"); // true if URL ends with /all
+    const editScope = isAll ? "all" : "single";
+
+    if (!timeStart || !timeEnd || !status) {
+      return res.status(400).json({
+        success: false,
+        message: "timeStart, timeEnd, status required",
+      });
     }
 
-    const parsed = availabilitySchema.parse(req.body);
-    const { start, end, status, recurringRule, description } = parsed;
-
-    // Checking current user has own these events or not
-    const ownerCheck = await db.query(
-      "SELECT user_id FROM availability WHERE id = $1",
-      [id]
+    const instRes = await db.query(
+      `SELECT i.*, r.freq, r.interval, r.by_day, r.start_date AS rule_start 
+       FROM availability_instances i 
+       LEFT JOIN availability_rules r ON i.rule_id = r.id 
+       WHERE i.id = $1`,
+      [instanceId]
     );
-    if (ownerCheck.rows.length === 0)
+
+    const instRes1 = await db.query(
+      `SELECT i.*, i.user_id, i.rule_id, i.instance_date FROM availability_instances i WHERE i.id = $1`,
+      [instanceId]
+    );
+
+    if (!instRes.rows[0])
       return res.status(404).json({ success: false, message: "Not found" });
-    if (ownerCheck.rows[0].user_id !== req.user.id)
+    const inst = instRes.rows[0];
+
+    if (inst.user_id !== req.user.id && req.user.role !== "ADMIN") {
       return res.status(403).json({ success: false, message: "Forbidden" });
+    }
 
-    // Updating the event
-    const result = await db.query(
-      `UPDATE availability
-       SET start_time = $1,
-           end_time = $2,
-           status = $3,
-           recurring_rule = $4,
-           description = $5,
-           updated_at = NOW()
-       WHERE id = $6
-       RETURNING *`,
-      [start, end, status, recurringRule || null, description, id]
-    );
+    const instanceDate = inst.instance_date;
 
-    // For realtime checking and emmiting
+    if (editScope === "all" && inst.rule_id) {
+      let query = `
+        UPDATE availability_rules 
+        SET time_start = $1, time_end = $2, status = $3, description = $4, updated_at = NOW()
+        WHERE id = $5
+      `;
+      let params = [
+        timeStart,
+        timeEnd,
+        status,
+        description || null,
+        inst.rule_id,
+      ];
+
+      // If user changed recurrence pattern
+      if (recurrence?.freq) {
+        query = `
+          UPDATE availability_rules 
+          SET time_start = $1, time_end = $2, status = $3, description = $4,
+              freq = $6, interval = $7, by_day = $8, end_date = $9,
+              updated_at = NOW()
+          WHERE id = $5
+        `;
+        params = [
+          timeStart,
+          timeEnd,
+          status,
+          description || null,
+          inst.rule_id,
+          recurrence.freq,
+          recurrence.interval || 1,
+          recurrence.byDay || null,
+          recurrence.until || null,
+        ];
+
+        // Rebuild all future instances with new pattern
+        await regenerateInstancesFromRule(inst.rule_id);
+      }
+
+      // Update rule
+      await db.query(query, params);
+
+      // Update all non-modified instances
+      await db.query(
+        `UPDATE availability_instances 
+         SET time_start = $1, time_end = $2, status = $3, description = $4, updated_at = NOW()
+         WHERE rule_id = $5 AND (exception_type IS NULL OR exception_type != 'modified')`,
+        [timeStart, timeEnd, status, description || null, inst.rule_id]
+      );
+    }
+
+    // CASE 1: Convert to recurring OR update recurring rule
+    if (recurrence && recurrence.freq) {
+      let ruleId = inst.rule_id;
+
+      if (!ruleId) {
+        // Convert single → recurring
+        const ruleRes = await db.query(
+          `INSERT INTO availability_rules 
+           (user_id, start_date, end_date, time_start, time_end, status, description, freq, interval, by_day)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+          [
+            inst.user_id,
+            instanceDate,
+            recurrence.until || null,
+            timeStart,
+            timeEnd,
+            status,
+            description || null,
+            recurrence.freq,
+            recurrence.interval || 1,
+            recurrence.byDay || null,
+          ]
+        );
+        ruleId = ruleRes.rows[0].id;
+
+        // Update current instance
+        await db.query(
+          `UPDATE availability_instances SET rule_id = $1, is_exception = false, exception_type = NULL WHERE id = $2`,
+          [ruleId, instanceId]
+        );
+      } else {
+        // Update existing rule
+        await db.query(
+          `UPDATE availability_rules SET time_start=$1, time_end=$2, status=$3, description=$4, freq=$5, interval=$6, by_day=$7, end_date=$8 WHERE id=$9`,
+          [
+            timeStart,
+            timeEnd,
+            status,
+            description || null,
+            recurrence.freq,
+            recurrence.interval || 1,
+            recurrence.byDay || null,
+            recurrence.until || null,
+            ruleId,
+          ]
+        );
+      }
+
+      // Regenerate instances from applyFromDate or rule start
+      const fromDate = applyFromDate
+        ? moment(applyFromDate)
+        : moment(inst.rule_start || instanceDate);
+      const until = recurrence.until || moment().add(2, "years");
+
+      const dates = generateDates(
+        fromDate.format("YYYY-MM-DD"),
+        until,
+        recurrence.freq,
+        recurrence.interval || 1,
+        recurrence.byDay
+      );
+
+      if (dates.length > 0) {
+        const values = dates.map((d) => [
+          ruleId,
+          inst.user_id,
+          d,
+          timeStart,
+          timeEnd,
+          status,
+          false,
+          null,
+          description,
+        ]);
+
+        const placeholders = values
+          .map(
+            (_, i) =>
+              `($${i * 9 + 1}::uuid, $${i * 9 + 2}::uuid, $${
+                i * 9 + 3
+              }::date, $${i * 9 + 4}::time, $${i * 9 + 5}::time, $${
+                i * 9 + 6
+              }, $${i * 9 + 7}, $${i * 9 + 8}, $${i * 9 + 9})`
+          )
+          .join(",");
+
+        await db.query(
+          `DELETE FROM availability_instances WHERE rule_id = $1 AND instance_date >= $2 AND (is_exception = false OR exception_type != 'modified')`,
+          [ruleId, fromDate.format("YYYY-MM-DD")]
+        );
+        await db.query(
+          `INSERT INTO availability_instances (rule_id, user_id, instance_date, time_start, time_end, status, is_exception, exception_type, description)
+           VALUES ${placeholders} ON CONFLICT (rule_id, instance_date) DO UPDATE SET
+           time_start=EXCLUDED.time_start, time_end=EXCLUDED.time_end, status=EXCLUDED.status, description=EXCLUDED.description`,
+          values.flat()
+        );
+      }
+    }
+    // CASE 2: Edit range (e.g., Nov 10–17 only)
+    else if (applyToRange && inst.rule_id) {
+      const rangeStart = moment(applyToRange.start).format("YYYY-MM-DD");
+      const rangeEnd = applyToRange.end
+        ? moment(applyToRange.end).format("YYYY-MM-DD")
+        : rangeStart;
+
+      await db.query(
+        `UPDATE availability_instances 
+         SET time_start=$1, time_end=$2, status=$3, description=$4, is_exception=true, exception_type='modified'
+         WHERE rule_id=$5 AND instance_date BETWEEN $6 AND $7`,
+        [
+          timeStart,
+          timeEnd,
+          status,
+          description || null,
+          inst.rule_id,
+          rangeStart,
+          rangeEnd,
+        ]
+      );
+    }
+    // CASE 3: This and future
+    else if (applyFromDate && inst.rule_id) {
+      await db.query(
+        `UPDATE availability_instances 
+         SET time_start=$1, time_end=$2, status=$3, description=$4, is_exception=true, exception_type='modified'
+         WHERE rule_id=$5 AND instance_date >= $6`,
+        [
+          timeStart,
+          timeEnd,
+          status,
+          description || null,
+          inst.rule_id,
+          instanceDate,
+        ]
+      );
+    }
+    // CASE 4: Single instance only
+    else {
+      await db.query(
+        `UPDATE availability_instances 
+         SET time_start=$1, time_end=$2, status=$3, description=$4, is_exception=true, exception_type='modified'
+         WHERE id=$5`,
+        [timeStart, timeEnd, status, description || null, instanceId]
+      );
+    }
+
     const io = req.app.get("io");
-    if (io) io.emit("availability-updated", { userId: req.user.id });
+    if (io) io.emit("availability-updated", { userId: inst.user_id });
 
-    res.json({
-      success: true,
-      message: responseMessage.availabilityUpdatedSuccess,
-      data: result.rows[0],
-    });
+    res.json({ success: true });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({
-      success: false,
-      message: responseMessage.serverErrorUpdatingAvailability,
-    });
+    console.error("updateAvailability error:", err);
+    res.status(500).json({ success: false });
   }
 };
 
+// DELETE AVAILABILITY
 export const deleteAvailability = async (req, res) => {
   try {
-    let { id } = req.params;
+    const { instanceId } = req.params;
+    const { applyFromDate, applyToRange } = req.body;
 
-    // Checking id for simple/recurring event
-    if (id.includes("::")) {
-      id = id.split("::")[0];
-    }
-
-    const ownerCheck = await db.query(
-      "SELECT user_id FROM availability WHERE id = $1",
-      [id]
+    const instRes = await db.query(
+      `SELECT i.*, r.id AS rule_id FROM availability_instances i 
+       LEFT JOIN availability_rules r ON i.rule_id = r.id WHERE i.id = $1`,
+      [instanceId]
     );
 
-    if (ownerCheck.rows.length === 0)
-      return res.status(404).json({
-        success: false,
-        message: responseMessage.availabilityNotFound,
-      });
+    if (!instRes.rows[0]) return res.status(404).json({ success: false });
+    const inst = instRes.rows[0];
 
-    if (ownerCheck.rows[0].user_id !== req.user.id)
-      return res.status(403).json({
-        success: false,
-        message: responseMessage.availabilityNotAuthorized,
-      });
+    if (inst.user_id !== req.user.id && req.user.role !== "ADMIN") {
+      return res.status(403).json({ success: false });
+    }
 
-    await db.query("DELETE FROM availability WHERE id = $1", [id]);
+    const instanceDate = inst.instance_date;
+
+    // Delete range
+    if (applyToRange && inst.rule_id) {
+      const start = applyToRange.start;
+      const end = applyToRange.end || start;
+      await db.query(
+        `UPDATE availability_instances SET exception_type='deleted', status='BUSY' 
+         WHERE rule_id=$1 AND instance_date BETWEEN $2 AND $3`,
+        [inst.rule_id, start, end]
+      );
+    }
+    // Delete this and future
+    else if (applyFromDate && inst.rule_id) {
+      await db.query(
+        `UPDATE availability_instances SET exception_type='deleted', status='BUSY' 
+         WHERE rule_id=$1 AND instance_date >= $2`,
+        [inst.rule_id, instanceDate]
+      );
+    }
+    // Delete all in series
+    else if (req.path.includes("/all") && inst.rule_id) {
+      await db.query("DELETE FROM availability_rules WHERE id = $1", [
+        inst.rule_id,
+      ]);
+      await db.query("DELETE FROM availability_instances WHERE rule_id = $1", [
+        inst.rule_id,
+      ]);
+    }
+    // Single delete
+    else {
+      await db.query(
+        `UPDATE availability_instances SET exception_type='deleted', status='BUSY' WHERE id=$1`,
+        [instanceId]
+      );
+    }
 
     const io = req.app.get("io");
-    if (io) io.emit("availability-updated", { userId: req.user.id });
+    if (io) io.emit("availability-updated", { userId: inst.user_id });
 
-    res.json({
-      success: true,
-      message: responseMessage.availabilityDeletedSuccess,
-    });
+    res.json({ success: true });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({
-      success: false,
-      message: responseMessage.serverErrorDeletingAvailability,
-    });
+    console.error("deleteAvailability error:", err);
+    res.status(500).json({ success: false });
   }
 };

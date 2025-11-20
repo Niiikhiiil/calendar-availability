@@ -1,24 +1,29 @@
+// routes/availability.routes.js
 import express from "express";
-import db from "../db.js";
 import { authMiddleware } from "../middleware/auth.middleware.js";
-
 import {
   createAvailability,
-  deleteAvailability,
   getAvailability,
   updateAvailability,
+  deleteAvailability,
 } from "../controllers/availability.controller.js";
 
 const router = express.Router();
 
-router
-  .route("/")
-  .post(authMiddleware, createAvailability) // create availability
-  .get(authMiddleware, getAvailability); // expand recurring and get availabilities for a user or multiple users within range
+// Create & Get
+router.post("/", authMiddleware, createAvailability);
+router.get("/", authMiddleware, getAvailability);
 
+// Single instance: /instance/:instanceId
 router
-  .route("/:id")
-  .put(authMiddleware, updateAvailability) // update availability
-  .delete(authMiddleware, deleteAvailability); //delete availability
+  .route("/instance/:instanceId")
+  .put(authMiddleware, updateAvailability) // edit this one only
+  .delete(authMiddleware, deleteAvailability); // delete this one only
+
+// Entire series: /instance/:instanceId/all
+router
+  .route("/instance/:instanceId/all")
+  .put(authMiddleware, updateAvailability) // edit all future
+  .delete(authMiddleware, deleteAvailability); // delete all future
 
 export default router;
