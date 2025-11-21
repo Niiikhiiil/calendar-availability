@@ -60,6 +60,97 @@ const generateDates = (start, until, freq, interval = 1, byDay = null) => {
   return [];
 };
 
+const regenerateInstancesFromRule = async (ruleId, fromDate = null) => {
+  try {
+    // 1. Get the rule
+    const ruleRes = await db.query(
+      `SELECT r.*, 
+              COALESCE(r.end_date, (r.start_date::date + INTERVAL '2 years')) AS effective_end
+       FROM availability_rules r 
+       WHERE r.id = $1`,
+      [ruleId]
+    );
+
+    if (ruleRes.rows.length === 0) {
+      throw new Error("Rule not found");
+    }
+
+    const rule = ruleRes.rows[0];
+
+    const startGenerateFrom = fromDate
+      ? moment(fromDate)
+      : moment(rule.start_date);
+
+    const until = rule.effective_end
+      ? moment(rule.effective_end)
+      : moment().add(2, "years");
+
+    // 2. Generate all dates according to the rule
+    const dates = generateDates(
+      startGenerateFrom.format("YYYY-MM-DD"),
+      until.format("YYYY-MM-DD"),
+      rule.freq,
+      rule.interval || 1,
+      rule.by_day
+    );
+
+    if (dates.length === 0) {
+      // Nothing to regenerate
+      return;
+    }
+
+    // 3. Delete old generated (non-exception) instances from the start date onward
+    await db.query(
+      `DELETE FROM availability_instances 
+       WHERE rule_id = $1 
+         AND instance_date >= $2
+         AND (is_exception = false OR exception_type IS DISTINCT FROM 'modified')`,
+      [ruleId, startGenerateFrom.format("YYYY-MM-DD")]
+    );
+
+    // 4. Bulk insert new instances
+    if (dates.length > 0) {
+      const values = dates.map((date) => [
+        ruleId,
+        rule.user_id,
+        date,
+        rule.time_start,
+        rule.time_end,
+        rule.status,
+        false, // is_exception
+        null, // exception_type
+        rule.description,
+      ]);
+
+      const placeholders = values
+        .map(
+          (_, i) =>
+            `($${i * 9 + 1}, $${i * 9 + 2}, $${i * 9 + 3}::date, $${
+              i * 9 + 4
+            }::time, $${i * 9 + 5}::time, $${i * 9 + 6}, $${i * 9 + 7}, $${
+              i * 9 + 8
+            }, $${i * 9 + 9})`
+        )
+        .join(",");
+
+      const flatValues = values.flat();
+
+      await db.query(
+        `INSERT INTO availability_instances 
+         (rule_id, user_id, instance_date, time_start, time_end, status, is_exception, exception_type, description)
+         VALUES ${placeholders}
+         ON CONFLICT (rule_id, instance_date) DO NOTHING`,
+        flatValues
+      );
+    }
+
+    console.log(`Regenerated ${dates.length} instances for rule ${ruleId}`);
+  } catch (err) {
+    console.error("regenerateInstancesFromRule error:", err);
+    throw err; // let caller handle
+  }
+};
+
 // Check for time overlaps on given dates
 const checkAvailabilityConflicts = async (userId, datesWithTime) => {
   if (datesWithTime.length === 0) return [];
@@ -551,7 +642,10 @@ export const updateAvailability = async (req, res) => {
         ];
 
         // Rebuild all future instances with new pattern
-        await regenerateInstancesFromRule(inst.rule_id);
+        await regenerateInstancesFromRule(
+          inst.rule_id,
+          applyFromDate || instanceDate
+        );
       }
 
       // Update rule
