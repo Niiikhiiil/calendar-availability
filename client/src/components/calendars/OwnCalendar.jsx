@@ -128,7 +128,7 @@ const OwnCalendar = ({
                   {/* MAIN EVENT CARD */}
                   <div
                     data-tooltip-id={tooltipId}
-                    className={`group relative flex flex-col p-1.5 h-full rounded-lg ${bgColor} text-white shadow-md border-1 ${borderColor} transition-all duration-200 hover:shadow-xl hover:scale-[1.02] cursor-pointer overflow-hidden`}
+                    className={`group relative flex flex-col p-1.5 h-full z-[999] rounded-lg ${bgColor} text-white shadow-md border-1 ${borderColor} transition-all duration-200 hover:shadow-xl hover:scale-[1.02] cursor-pointer overflow-hidden`}
                   >
                     {/* Recurring Badge */}
                     {isRecurring && currentView !== "dayGridMonth" && (
@@ -162,7 +162,7 @@ const OwnCalendar = ({
                     id={tooltipId}
                     place="top"
                     effect="solid"
-                    className="!bg-white !text-gray-800 !border !border-gray-200 !rounded-2xl !shadow-2xl !p-4 !max-w-xs z-100"
+                    className="!bg-white !text-gray-800 !border !border-gray-200 !rounded-2xl !shadow-2xl !p-4 !max-w-xs !z-[9999]"
                     backgroundColor="white"
                   >
                     <div className="space-y-3">
@@ -202,7 +202,7 @@ const OwnCalendar = ({
 
                       {/* Footer */}
                       <div className="text-xs text-gray-500 pt-2 border-t">
-                        Click to edit • Double-click to view details
+                        Click to edit or delete
                       </div>
                     </div>
                   </ReactTooltip>

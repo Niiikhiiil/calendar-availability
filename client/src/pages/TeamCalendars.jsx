@@ -62,6 +62,15 @@ export default function TeamCalendars() {
     }
   };
 
+  useEffect(() => {
+    if (selectedUsers?.id) {
+      getOtherUserEvents(selectedUsers);
+    }
+  }, [currentRange?.start, currentRange?.end, currentView]);
+
+  console.log("currentView", currentView);
+  console.log("currentRange", currentRange);
+
   const toggleUserSelection = (u) => {
     setSelectedUsers(u);
     getOtherUserEvents(u);
@@ -230,7 +239,8 @@ export default function TeamCalendars() {
               calendarRefAPI={teammateCalendarRefs.current[
                 selectedUsers?.id
               ]?.getApi()}
-              onViewChange={(view) => setCurrentView(view)}
+              setCurrentView={setCurrentView}
+              setCurrentRange={setCurrentRange}
               removeCalendar={() => setSelectedUsers({})}
             />
           )}

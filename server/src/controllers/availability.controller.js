@@ -87,23 +87,54 @@ const checkAvailabilityConflicts = async (userId, datesWithTime) => {
     return acc;
   }, {});
 
+  const toMinutes = (t) => {
+    const [h, m, s = 0] = t.split(":").map(Number);
+    return h * 60 + m + s / 60;
+  };
+
   const conflicts = [];
+
+  // for (const { date, timeStart, timeEnd } of datesWithTime) {
+  //   if (!existing[date]) continue;
+
+  //   for (const slot of existing[date]) {
+  //     const eStart = slot.start;
+  //     const eEnd = slot.end;
+
+  //     // Overlap: not (newEnd <= existingStart OR newStart >= existingEnd)
+  //     if (timeStart < eEnd && timeEnd > eStart) {
+  //       conflicts.push({
+  //         date,
+  //         new: { start: timeStart, end: timeEnd },
+  //         existing: {
+  //           start: eStart,
+  //           end: eEnd,
+  //           status: slot.status,
+  //           description: slot.description,
+  //         },
+  //       });
+  //     }
+  //   }
+  // }
 
   for (const { date, timeStart, timeEnd } of datesWithTime) {
     if (!existing[date]) continue;
 
-    for (const slot of existing[date]) {
-      const eStart = slot.start;
-      const eEnd = slot.end;
+    const newStartMin = toMinutes(timeStart);
+    const newEndMin = toMinutes(timeEnd);
 
-      // Overlap: not (newEnd <= existingStart OR newStart >= existingEnd)
-      if (timeStart < eEnd && timeEnd > eStart) {
+    for (const slot of existing[date]) {
+      const eStartMin = toMinutes(slot.start);
+      const eEndMin = toMinutes(slot.end);
+
+      // Overlap if intervals are not clearly separate
+      if (newStartMin < eEndMin && newEndMin > eStartMin) {
         conflicts.push({
           date,
           new: { start: timeStart, end: timeEnd },
           existing: {
-            start: eStart,
-            end: eEnd,
+            start: slot.start,
+            end: slot.end,
             status: slot.status,
             description: slot.description,
           },
@@ -229,14 +260,37 @@ export const createAvailability = async (req, res) => {
         ruleId = ruleRes.rows[0].id;
 
         for (const date of datesToCreate) {
+          // await db.query(
+          //   `INSERT INTO availability_instances
+          //    (rule_id, user_id, instance_date, time_start, time_end, status, is_exception, exception_type, description)
+          //    SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9
+          //    WHERE NOT EXISTS (
+          //      SELECT 1 FROM availability_instances
+          //      WHERE rule_id = $1 AND instance_date = $3
+          //    )`,
+          //   [
+          //     ruleId,
+          //     userId,
+          //     date,
+          //     timeStart,
+          //     timeEnd,
+          //     status,
+          //     false,
+          //     null,
+          //     description,
+          //   ]
+          // );
+
           await db.query(
-            `INSERT INTO availability_instances 
-             (rule_id, user_id, instance_date, time_start, time_end, status, is_exception, exception_type, description)
-             SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9
-             WHERE NOT EXISTS (
-               SELECT 1 FROM availability_instances 
-               WHERE rule_id = $1 AND instance_date = $3
-             )`,
+            `INSERT INTO availability_instances
+            (rule_id, user_id, instance_date, time_start, time_end, status, is_exception, exception_type, description)
+            SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9
+            WHERE NOT EXISTS (
+            SELECT 1 FROM availability_instances
+            WHERE rule_id = $1 
+            AND instance_date = $3
+            AND (exception_type IS NULL OR exception_type != 'deleted')
+            )`,
             [
               ruleId,
               userId,
@@ -252,14 +306,37 @@ export const createAvailability = async (req, res) => {
         }
       } else {
         for (const date of datesToCreate) {
+          // await db.query(
+          //   `INSERT INTO availability_instances
+          //    (rule_id, user_id, instance_date, time_start, time_end, status, is_exception, exception_type, description)
+          //    SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9
+          //    WHERE NOT EXISTS (
+          //      SELECT 1 FROM availability_instances
+          //      WHERE user_id = $2 AND instance_date = $3 AND time_start = $4 AND time_end = $5
+          //    )`,
+          //   [
+          //     null,
+          //     userId,
+          //     date,
+          //     timeStart,
+          //     timeEnd,
+          //     status,
+          //     false,
+          //     null,
+          //     description || null,
+          //   ]
+          // );
           await db.query(
-            `INSERT INTO availability_instances 
-             (rule_id, user_id, instance_date, time_start, time_end, status, is_exception, exception_type, description)
+            `INSERT INTO availability_instances
+            (rule_id, user_id, instance_date, time_start, time_end, status, is_exception, exception_type, description)
              SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9
              WHERE NOT EXISTS (
-               SELECT 1 FROM availability_instances 
-               WHERE user_id = $2 AND instance_date = $3 AND time_start = $4 AND time_end = $5
-             )`,
+             SELECT 1 FROM availability_instances
+             WHERE user_id = $2 
+             AND instance_date = $3 
+             AND time_start = $4 
+             AND time_end = $5
+             AND (exception_type IS NULL OR exception_type != 'deleted'))`,
             [
               null,
               userId,
@@ -327,23 +404,34 @@ export const getAvailability = async (req, res) => {
 
     const result = await db.query(
       `SELECT 
-         i.id, i.rule_id, i.instance_date::text, i.time_start, i.time_end, 
-         i.status, i.description, i.is_exception, i.exception_type,
-         u.name AS user_name, u.id AS user_id
-       FROM availability_instances i
-       JOIN users u ON i.user_id = u.id
-       WHERE i.user_id = ANY($1)
-         AND i.instance_date BETWEEN $2 AND $3
-         AND (i.exception_type IS NULL OR i.exception_type != 'deleted')
-       ORDER BY i.instance_date, i.time_start`,
+     i.id, 
+     i.rule_id, 
+     i.instance_date::text, 
+     TO_CHAR(i.time_start, 'HH24:MI:SS') AS time_start,
+     TO_CHAR(i.time_end,   'HH24:MI:SS') AS time_end,
+     i.status, 
+     i.description, 
+     i.is_exception, 
+     i.exception_type,
+     u.name AS user_name, 
+     u.id AS user_id
+   FROM availability_instances i
+   JOIN users u ON i.user_id = u.id
+   WHERE i.user_id = ANY($1)
+     AND i.instance_date BETWEEN $2 AND $3
+     AND (i.exception_type IS NULL OR i.exception_type != 'deleted')
+   ORDER BY i.instance_date, i.time_start`,
       [targetUserIds, startDate, endDate]
     );
 
     const events = result.rows.map((r) => {
-      const startISO = `${r.instance_date}T${r.time_start
-        .toString()
-        .slice(0, 8)}`;
-      const endISO = `${r.instance_date}T${r.time_end.toString().slice(0, 8)}`;
+      // const startISO = `${r.instance_date}T${r.time_start
+      //   .toString()
+      //   .slice(0, 8)}`;
+      // const endISO = `${r.instance_date}T${r.time_end.toString().slice(0, 8)}`;
+
+      const startISO = `${r.instance_date}T${r.time_start}`;
+      const endISO = `${r.instance_date}T${r.time_end}`;
 
       return {
         id: r.id,
@@ -641,7 +729,7 @@ export const deleteAvailability = async (req, res) => {
     const { applyFromDate, applyToRange } = req.body;
 
     const instRes = await db.query(
-      `SELECT i.*, r.id AS rule_id FROM availability_instances i 
+      `SELECT i.*, r.id AS rule_id FROM availability_instances i
        LEFT JOIN availability_rules r ON i.rule_id = r.id WHERE i.id = $1`,
       [instanceId]
     );
@@ -660,7 +748,7 @@ export const deleteAvailability = async (req, res) => {
       const start = applyToRange.start;
       const end = applyToRange.end || start;
       await db.query(
-        `UPDATE availability_instances SET exception_type='deleted', status='BUSY' 
+        `UPDATE availability_instances SET exception_type='deleted', status='BUSY'
          WHERE rule_id=$1 AND instance_date BETWEEN $2 AND $3`,
         [inst.rule_id, start, end]
       );
@@ -668,7 +756,7 @@ export const deleteAvailability = async (req, res) => {
     // Delete this and future
     else if (applyFromDate && inst.rule_id) {
       await db.query(
-        `UPDATE availability_instances SET exception_type='deleted', status='BUSY' 
+        `UPDATE availability_instances SET exception_type='deleted', status='BUSY'
          WHERE rule_id=$1 AND instance_date >= $2`,
         [inst.rule_id, instanceDate]
       );

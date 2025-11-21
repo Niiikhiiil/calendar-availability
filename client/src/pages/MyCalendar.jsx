@@ -67,7 +67,7 @@ export default function MyCalendar() {
       const res = await axiosInstance.get(
         apiUrls.getCurrentUserAvailability(start, end)
       );
-
+      console.log("res.data.data", res.data.data);
       if (res?.data?.success) {
         const mapped = res.data.data.map((av) => ({
           ...av,
@@ -136,6 +136,8 @@ export default function MyCalendar() {
   const handleEventClick = (clickInfo) => {
     const event = clickInfo.event;
     const props = event.extendedProps;
+    console.log("event", event);
+    console.log("props", props);
 
     setForm({
       description: props.description || "",
@@ -243,6 +245,10 @@ export default function MyCalendar() {
       socket.current?.emit("availability-updated");
       setModalOpen(false);
       getCurrentUserEvents(true);
+      setEditMode("this");
+      setDeleteMode("this");
+      setRangeStart("");
+      setRangeEnd("");
 
       // SUCCESS ALERT
       await Swal.fire({
@@ -329,6 +335,8 @@ export default function MyCalendar() {
       setIsLoading("");
     }
   };
+
+  console.log("selectedEvent", selectedEvent);
 
   return (
     <>
