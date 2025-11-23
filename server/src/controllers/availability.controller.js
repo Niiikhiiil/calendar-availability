@@ -2,7 +2,45 @@ import db from "../db.js";
 import moment from "moment";
 import { createAvailabilitySchema } from "../utils/utils.js";
 
-// Generate dates based on RRULE-like params
+// UPDATE RULE START_DATE/END_DATE TO MATCH REMAINING INSTANCES
+const updateRuleDateRange = async (ruleId) => {
+  if (!ruleId) return;
+
+  const result = await db.query(
+    `SELECT instance_date::text
+    FROM availability_instances 
+    WHERE rule_id = $1  AND exception_type IS DISTINCT FROM 'deleted'`,
+    [ruleId.toString()]
+  );
+
+  const row = result.rows;
+  const new_start_date = moment
+    .min(row.map((d) => moment(d.instance_date)))
+    .format("YYYY-MM-DD");
+  const new_end_date = moment
+    .max(row.map((d) => moment(d.instance_date)))
+    .format("YYYY-MM-DD");
+
+  // If no instances left → delete the rule entirely (optional but clean)
+  if (!new_start_date || !new_end_date) {
+    await db.query("DELETE FROM availability_rules WHERE id = $1", [ruleId]);
+    await db.query("DELETE FROM availability_instances WHERE rule_id = $1", [
+      ruleId,
+    ]);
+    return;
+  }
+
+  await db.query(
+    `UPDATE availability_rules
+     SET start_date = $1,
+         end_date = $2,
+         updated_at = NOW()
+     WHERE id = $3`,
+    [new_start_date, new_end_date, ruleId]
+  );
+};
+
+// GENERATE DATES BASED ON RRULE-LIKE PARAMS
 const generateDates = (start, until, freq, interval = 1, byDay = null) => {
   const results = [];
   const startDate = moment(start).startOf("day");
@@ -60,6 +98,7 @@ const generateDates = (start, until, freq, interval = 1, byDay = null) => {
   return [];
 };
 
+// REGENERATE INSTANCES
 const regenerateInstancesFromRule = async (ruleId, fromDate = null) => {
   try {
     // 1. Get the rule
@@ -151,7 +190,7 @@ const regenerateInstancesFromRule = async (ruleId, fromDate = null) => {
   }
 };
 
-// Check for time overlaps on given dates
+// CHECK AVAILABILITY CONFLICTS
 const checkAvailabilityConflicts = async (userId, datesWithTime) => {
   if (datesWithTime.length === 0) return [];
 
@@ -328,6 +367,13 @@ export const createAvailability = async (req, res) => {
 
     let ruleId = null;
 
+    const new_start_date = moment
+      .min(datesToCreate.map((date) => moment(date)))
+      .format("YYYY-MM-DD");
+    const new_end_date = moment
+      .max(datesToCreate.map((date) => moment(date)))
+      .format("YYYY-MM-DD");
+
     if (datesToCreate.length > 0) {
       if (recurrence) {
         const ruleRes = await db.query(
@@ -337,8 +383,8 @@ export const createAvailability = async (req, res) => {
            RETURNING id`,
           [
             userId,
-            startDate,
-            recurrence.until || null,
+            new_start_date,
+            new_end_date || null,
             timeStart,
             timeEnd,
             status,
@@ -515,6 +561,26 @@ export const getAvailability = async (req, res) => {
       [targetUserIds, startDate, endDate]
     );
 
+    const ruleData = await db.query(
+      `SELECT 
+      i.id ,
+      i.user_id ,
+      i.start_date,
+      i.end_date ,
+      i.time_start,
+      i.time_end,
+      i.freq,
+      i.interval,
+      i.by_day,
+      u.name AS user_name,
+      u.id AS user_id 
+      FROM availability_rules i
+      JOIN users u ON i.user_id=u.id
+      WHERE i.user_id = ANY($1)
+      `,
+      [targetUserIds]
+    );
+
     const events = result.rows.map((r) => {
       // const startISO = `${r.instance_date}T${r.time_start
       //   .toString()
@@ -523,12 +589,28 @@ export const getAvailability = async (req, res) => {
 
       const startISO = `${r.instance_date}T${r.time_start}`;
       const endISO = `${r.instance_date}T${r.time_end}`;
+      const recurrence = ruleData?.rows?.find(
+        (data) => data?.id === r.rule_id && data?.user_id === r.user_id
+      );
 
       return {
         id: r.id,
         title: r.status,
         start: startISO,
         end: endISO,
+        ...(r.rule_id &&
+          recurrence && {
+            recurrence: {
+              byDay: recurrence?.by_day,
+              freq: recurrence?.freq,
+              start_date: moment(recurrence?.start_date).format("YYYY-MM-DD"),
+              end_date: moment(recurrence?.end_date).format("YYYY-MM-DD"),
+              until: moment(recurrence?.end_date).format("YYYY-MM-DD"),
+              interval: recurrence?.interval,
+              time_start: recurrence?.time_start,
+              time_end: recurrence?.time_end,
+            },
+          }),
         backgroundColor:
           r.status === "AVAILABLE"
             ? "#34D399"
@@ -584,17 +666,17 @@ export const updateAvailability = async (req, res) => {
     }
 
     const instRes = await db.query(
-      `SELECT i.*, r.freq, r.interval, r.by_day, r.start_date AS rule_start 
-       FROM availability_instances i 
-       LEFT JOIN availability_rules r ON i.rule_id = r.id 
+      `SELECT i.*, r.freq, r.interval, r.by_day, r.start_date AS rule_start
+       FROM availability_instances i
+       LEFT JOIN availability_rules r ON i.rule_id = r.id
        WHERE i.id = $1`,
       [instanceId]
     );
 
-    const instRes1 = await db.query(
-      `SELECT i.*, i.user_id, i.rule_id, i.instance_date FROM availability_instances i WHERE i.id = $1`,
-      [instanceId]
-    );
+    // const instRes1 = await db.query(
+    //   `SELECT i.*, i.user_id, i.rule_id, i.instance_date FROM availability_instances i WHERE i.id = $1`,
+    //   [instanceId]
+    // );
 
     if (!instRes.rows[0])
       return res.status(404).json({ success: false, message: "Not found" });
@@ -606,9 +688,9 @@ export const updateAvailability = async (req, res) => {
 
     const instanceDate = inst.instance_date;
 
-    if (editScope === "all" && inst.rule_id) {
+    if (editScope === "all" && inst.rule_id && !recurrence) {
       let query = `
-        UPDATE availability_rules 
+        UPDATE availability_rules
         SET time_start = $1, time_end = $2, status = $3, description = $4, updated_at = NOW()
         WHERE id = $5
       `;
@@ -623,7 +705,7 @@ export const updateAvailability = async (req, res) => {
       // If user changed recurrence pattern
       if (recurrence?.freq) {
         query = `
-          UPDATE availability_rules 
+          UPDATE availability_rules
           SET time_start = $1, time_end = $2, status = $3, description = $4,
               freq = $6, interval = $7, by_day = $8, end_date = $9,
               updated_at = NOW()
@@ -653,7 +735,7 @@ export const updateAvailability = async (req, res) => {
 
       // Update all non-modified instances
       await db.query(
-        `UPDATE availability_instances 
+        `UPDATE availability_instances
          SET time_start = $1, time_end = $2, status = $3, description = $4, updated_at = NOW()
          WHERE rule_id = $5 AND (exception_type IS NULL OR exception_type != 'modified')`,
         [timeStart, timeEnd, status, description || null, inst.rule_id]
@@ -661,13 +743,13 @@ export const updateAvailability = async (req, res) => {
     }
 
     // CASE 1: Convert to recurring OR update recurring rule
-    if (recurrence && recurrence.freq) {
+    else if (recurrence && recurrence.freq) {
       let ruleId = inst.rule_id;
 
       if (!ruleId) {
         // Convert single → recurring
         const ruleRes = await db.query(
-          `INSERT INTO availability_rules 
+          `INSERT INTO availability_rules
            (user_id, start_date, end_date, time_start, time_end, status, description, freq, interval, by_day)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
           [
@@ -758,6 +840,7 @@ export const updateAvailability = async (req, res) => {
         );
       }
     }
+
     // CASE 2: Edit range (e.g., Nov 10–17 only)
     else if (applyToRange && inst.rule_id) {
       const rangeStart = moment(applyToRange.start).format("YYYY-MM-DD");
@@ -766,8 +849,8 @@ export const updateAvailability = async (req, res) => {
         : rangeStart;
 
       await db.query(
-        `UPDATE availability_instances 
-         SET time_start=$1, time_end=$2, status=$3, description=$4, is_exception=true, exception_type='modified'
+        `UPDATE availability_instances
+         SET rule_id=null, time_start=$1, time_end=$2, status=$3, description=$4, is_exception=false, exception_type=null
          WHERE rule_id=$5 AND instance_date BETWEEN $6 AND $7`,
         [
           timeStart,
@@ -783,8 +866,8 @@ export const updateAvailability = async (req, res) => {
     // CASE 3: This and future
     else if (applyFromDate && inst.rule_id) {
       await db.query(
-        `UPDATE availability_instances 
-         SET time_start=$1, time_end=$2, status=$3, description=$4, is_exception=true, exception_type='modified'
+        `UPDATE availability_instances
+         SET rule_id=null,time_start=$1, time_end=$2, status=$3, description=$4, is_exception=false, exception_type=null
          WHERE rule_id=$5 AND instance_date >= $6`,
         [
           timeStart,
@@ -796,15 +879,18 @@ export const updateAvailability = async (req, res) => {
         ]
       );
     }
+
     // CASE 4: Single instance only
     else {
       await db.query(
-        `UPDATE availability_instances 
-         SET time_start=$1, time_end=$2, status=$3, description=$4, is_exception=true, exception_type='modified'
-         WHERE id=$5`,
+        `UPDATE availability_instances
+           SET rule_id=null,time_start=$1, time_end=$2, status=$3, description=$4, is_exception=false, exception_type=null
+           WHERE id=$5`,
         [timeStart, timeEnd, status, description || null, instanceId]
       );
     }
+
+    await updateRuleDateRange(inst.rule_id);
 
     const io = req.app.get("io");
     if (io) io.emit("availability-updated", { userId: inst.user_id });
@@ -846,6 +932,7 @@ export const deleteAvailability = async (req, res) => {
          WHERE rule_id=$1 AND instance_date BETWEEN $2 AND $3`,
         [inst.rule_id, start, end]
       );
+      await updateRuleDateRange(inst.rule_id);
     }
     // Delete this and future
     else if (applyFromDate && inst.rule_id) {
@@ -854,6 +941,7 @@ export const deleteAvailability = async (req, res) => {
          WHERE rule_id=$1 AND instance_date >= $2`,
         [inst.rule_id, instanceDate]
       );
+      await updateRuleDateRange(inst.rule_id);
     }
     // Delete all in series
     else if (req.path.includes("/all") && inst.rule_id) {
@@ -870,6 +958,9 @@ export const deleteAvailability = async (req, res) => {
         `UPDATE availability_instances SET exception_type='deleted', status='BUSY' WHERE id=$1`,
         [instanceId]
       );
+      if (inst.rule_id) {
+        await updateRuleDateRange(inst.rule_id); // ← Also add here!
+      }
     }
 
     const io = req.app.get("io");

@@ -53,21 +53,25 @@ export default function MyCalendar() {
   useEffect(() => {
     socket.current = io(SOCKET_URL, { withCredentials: true });
     socket.current.on("availability-updated", () => {
-      getCurrentUserEvents();
+      getCurrentUserEvents(true);
     });
     return () => socket.current?.disconnect();
   }, []);
 
   const getCurrentUserEvents = async (loading = false) => {
+    const api = calendarRef.current?.getApi();
+    const view = api.view;
     try {
       if (loading) setIsLoading("Loading your availability...");
-      const start = moment(currentRange.start).format("YYYY-MM-DD");
-      const end = moment(currentRange.end).format("YYYY-MM-DD");
+      const start = moment(view.currentStart).format("YYYY-MM-DD");
+      const end = moment(view.currentEnd)
+        .subtract(1, "day")
+        .format("YYYY-MM-DD");
 
       const res = await axiosInstance.get(
         apiUrls.getCurrentUserAvailability(start, end)
       );
-      console.log("res.data.data", res.data.data);
+
       if (res?.data?.success) {
         const mapped = res.data.data.map((av) => ({
           ...av,
@@ -136,9 +140,6 @@ export default function MyCalendar() {
   const handleEventClick = (clickInfo) => {
     const event = clickInfo.event;
     const props = event.extendedProps;
-    console.log("event", event);
-    console.log("props", props);
-
     setForm({
       description: props.description || "",
       startDate: moment(event.start).format("YYYY-MM-DD"),
@@ -146,7 +147,7 @@ export default function MyCalendar() {
       timeStart: moment(event.start).format("HH:mm"),
       timeEnd: moment(event.end).format("HH:mm"),
       status: event.title,
-      recurrence: undefined,
+      recurrence: props?.recurrence || undefined,
     });
 
     setSelectedEvent({
@@ -200,7 +201,10 @@ export default function MyCalendar() {
         status: form.status,
         description: form.description?.trim() || null,
         recurrence:
-          form.recurrence?.freq && form.recurrence.freq !== "NONE"
+          form.recurrence?.freq &&
+          form.recurrence.freq !== "NONE" &&
+          form.status !== "LEAVE" &&
+          ((selectedEvent?.ruleId && editMode === "all") || !selectedEvent)
             ? { ...form.recurrence }
             : undefined,
       };
@@ -333,6 +337,8 @@ export default function MyCalendar() {
       });
     } finally {
       setIsLoading("");
+      setDeleteMode("this");
+      setEditMode("this");
     }
   };
 

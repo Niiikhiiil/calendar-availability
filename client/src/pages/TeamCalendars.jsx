@@ -68,9 +68,6 @@ export default function TeamCalendars() {
     }
   }, [currentRange?.start, currentRange?.end, currentView]);
 
-  console.log("currentView", currentView);
-  console.log("currentRange", currentRange);
-
   const toggleUserSelection = (u) => {
     setSelectedUsers(u);
     getOtherUserEvents(u);

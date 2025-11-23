@@ -70,6 +70,60 @@ const AvailabilityModal = ({
     setErrors,
   ]);
 
+  const describeRecurrence = (r) => {
+    const freqLabel = {
+      DAILY: "day",
+      WEEKLY: "week",
+      MONTHLY: "month",
+    };
+
+    const dayLabel = {
+      MO: "Monday",
+      TU: "Tuesday",
+      WE: "Wednesday",
+      TH: "Thursday",
+      FR: "Friday",
+      SA: "Saturday",
+      SU: "Sunday",
+    };
+
+    let sentence = "";
+
+    // Frequency + Interval
+    if (r.interval && r.interval > 1) {
+      sentence = `every ${r.interval} ${freqLabel[r.freq]}s`;
+    } else {
+      sentence = `every ${freqLabel[r.freq]}`;
+    }
+
+    // Weekly days
+    if (r.freq === "WEEKLY" && r.byDay?.length) {
+      const days = r.byDay.map((d) => dayLabel[d]).join(", ");
+      sentence += ` on ${days}`;
+    }
+
+    // Time (12-hour format)
+    if (r.time_start && r.time_end) {
+      const startTime = moment(r.time_start, "HH:mm").format("hh:mm A");
+      const endTime = moment(r.time_end, "HH:mm").format("hh:mm A");
+      sentence += ` from ${startTime} to ${endTime}`;
+    }
+
+    // Start date
+    if (r.start_date) {
+      const sd = moment(r.start_date).format("DD-MM-YYYY");
+      sentence += ` starting ${sd}`;
+    }
+
+    // End date / until
+    if (r.until) {
+      const ed = moment(r.until).format("DD-MM-YYYY");
+      sentence += ` until ${ed}`;
+    }
+
+    return sentence;
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
       <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full mt-10">
@@ -164,21 +218,80 @@ const AvailabilityModal = ({
                       <label className="block text-xs text-gray-600">
                         From
                       </label>
-                      <input
+                      {/* <input
                         type="date"
                         value={rangeStart}
+                        minDate={form?.recurrence?.startDate}
                         onChange={(e) => setRangeStart(e.target.value)}
                         className="w-full px-3 py-2 border rounded-md"
+                      /> */}
+                      <DatePicker
+                        selected={
+                          rangeStart
+                            ? moment(rangeStart, "YYYY-MM-DD").toDate()
+                            : null
+                        }
+                        onChange={(date) => {
+                          setRangeStart(moment(date).format("YYYY-MM-DD"));
+                        }}
+                        minDate={
+                          form?.recurrence?.start_date
+                            ? moment(
+                                form.recurrence.start_date,
+                                "YYYY-MM-DD"
+                              ).toDate()
+                            : null
+                        }
+                        maxDate={
+                          form?.recurrence?.end_date
+                            ? moment(
+                                form.recurrence.end_date,
+                                "YYYY-MM-DD"
+                              ).toDate()
+                            : null
+                        }
+                        dateFormat="dd-MM-yyyy"
+                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 outline-none cursor-pointer"
+                        placeholderText="Select Start Date"
                       />
                     </div>
                     <div>
                       <label className="block text-xs text-gray-600">To</label>
-                      <input
+                      {/* <input
                         type="date"
                         value={rangeEnd}
-                        min={rangeStart}
+                        minDate={rangeStart}
                         onChange={(e) => setRangeEnd(e.target.value)}
                         className="w-full px-3 py-2 border rounded-md"
+                      /> */}
+                      <DatePicker
+                        selected={
+                          rangeEnd
+                            ? moment(rangeEnd, "YYYY-MM-DD").toDate()
+                            : null
+                        }
+                        onChange={(date) => {
+                          setRangeEnd(moment(date).format("YYYY-MM-DD"));
+                        }}
+                        minDate={
+                          form?.recurrence?.start_date
+                            ? moment(
+                                form.recurrence.start_date,
+                                "YYYY-MM-DD"
+                              ).toDate()
+                            : null
+                        }
+                        maxDate={
+                          form?.recurrence?.end_date
+                            ? moment(
+                                form.recurrence.end_date,
+                                "YYYY-MM-DD"
+                              ).toDate()
+                            : null
+                        }
+                        dateFormat="dd-MM-yyyy"
+                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 outline-none cursor-pointer"
+                        placeholderText="Select End Date"
                       />
                     </div>
                   </div>
@@ -439,137 +552,150 @@ const AvailabilityModal = ({
                   <option value="TENTATIVE">Tentative (Yellow)</option>
                 </select>
               </div>
-
               {/* RECURRENCE */}
-              <div className="border-t-2 border-gray-100 pt-6">
-                <label className="block text-sm font-semibold text-gray-700 mb-4">
-                  Recurrence
-                </label>
-                <select
-                  value={form?.recurrence?.freq || "NONE"}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (val === "NONE") {
-                      setForm({ ...form, recurrence: undefined });
-                    } else {
-                      setForm({
-                        ...form,
-                        recurrence: {
-                          freq: val,
-                          interval: 1,
-                          byDay: [],
-                          until: "",
-                        },
-                      });
-                    }
-                  }}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
-                >
-                  <option value="NONE">No recurrence</option>
-                  <option value="DAILY">Daily</option>
-                  <option value="WEEKLY">Weekly</option>
-                  <option value="MONTHLY">Monthly</option>
-                </select>
+              {((selectedEvent?.ruleId && editMode === "all") ||
+                !selectedEvent?.ruleId) && (
+                <div className="border-t-2 border-gray-100 pt-6">
+                  <label className="block text-sm font-semibold text-gray-700 mb-4">
+                    Recurrence
+                  </label>
+                  <select
+                    value={form?.recurrence?.freq || "NONE"}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === "NONE") {
+                        setForm({ ...form, recurrence: undefined });
+                      } else {
+                        setForm({
+                          ...form,
+                          recurrence: {
+                            freq: val,
+                            interval: 1,
+                            byDay: [],
+                            until: "",
+                          },
+                        });
+                      }
+                    }}
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                  >
+                    <option value="NONE">No recurrence</option>
+                    <option value="DAILY">Daily</option>
+                    <option value="WEEKLY">Weekly</option>
+                    <option value="MONTHLY">Monthly</option>
+                  </select>
 
-                {/* RECURRENCE OPTIONS */}
-                {form.recurrence && form.recurrence.freq !== "NONE" && (
-                  <div className="mt-5 p-5 bg-gradient-to-br from-indigo-50 to-purple-50 rounded-2xl space-y-5">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="text-sm font-medium text-gray-700">
-                          Repeat every
-                        </label>
-                        <input
-                          type="number"
-                          min="1"
-                          value={form?.recurrence?.interval}
-                          onChange={(e) =>
-                            setForm({
-                              ...form,
-                              recurrence: {
-                                ...form?.recurrence,
-                                interval: Number(e.target.value) || 1,
-                              },
-                            })
-                          }
-                          className="w-full mt-1 px-3 py-2 border border-indigo-300 rounded-lg focus:border-indigo-500 outline-none"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-sm font-medium text-gray-700">
-                          Ends on
-                        </label>
-                        <DatePicker
-                          selected={
-                            form?.recurrence?.until
-                              ? moment(form?.recurrence?.until).toDate()
-                              : null
-                          }
-                          onChange={(date) =>
-                            setForm({
-                              ...form,
-                              recurrence: {
-                                ...form?.recurrence,
-                                until: date
-                                  ? moment(date).format("YYYY-MM-DD")
-                                  : "",
-                              },
-                            })
-                          }
-                          minDate={moment(form?.startDate)
-                            .add(1, "day")
-                            .toDate()}
-                          className="w-full mt-1 px-3 py-2 border border-indigo-300 rounded-lg focus:border-indigo-500 outline-none"
-                          placeholderText="No end date"
-                        />
-                      </div>
-                    </div>
-
-                    {/* WEEKLY OPTIONS */}
-                    {form?.recurrence?.freq === "WEEKLY" && (
-                      <div>
-                        <label className="text-sm font-medium text-gray-700 block mb-3">
-                          Repeat on
-                        </label>
-                        <div className="flex flex-wrap gap-3">
-                          {["MO", "TU", "WE", "TH", "FR", "SA", "SU"].map(
-                            (day) => (
-                              <button
-                                key={day}
-                                type="button"
-                                onClick={() => {
-                                  const byDay =
-                                    form?.recurrence?.byDay.includes(day)
-                                      ? form?.recurrence?.byDay?.filter(
-                                          (d) => d !== day
-                                        )
-                                      : [...form?.recurrence?.byDay, day];
-                                  setForm({
-                                    ...form,
-                                    recurrence: { ...form?.recurrence, byDay },
-                                  });
-                                }}
-                                className={`px-4 py-2 rounded-lg font-medium transition ${
-                                  form?.recurrence?.byDay.includes(day)
-                                    ? "bg-indigo-600 text-white shadow-lg"
-                                    : "bg-white border-2 border-indigo-300 text-indigo-700 hover:bg-indigo-50"
-                                }`}
-                              >
-                                {day}
-                              </button>
-                            )
-                          )}
+                  {/* RECURRENCE OPTIONS */}
+                  {form.recurrence && form.recurrence.freq !== "NONE" && (
+                    <div className="mt-5 p-5 bg-gradient-to-br from-indigo-50 to-purple-50 rounded-2xl space-y-5">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="text-sm font-medium text-gray-700">
+                            Repeat every
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={form?.recurrence?.interval}
+                            onChange={(e) =>
+                              setForm({
+                                ...form,
+                                recurrence: {
+                                  ...form?.recurrence,
+                                  interval: Number(e.target.value) || 1,
+                                },
+                              })
+                            }
+                            className="w-full mt-1 px-3 py-2 border border-indigo-300 rounded-lg focus:border-indigo-500 outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-gray-700">
+                            Ends on
+                          </label>
+                          <DatePicker
+                            selected={
+                              form?.recurrence?.until
+                                ? moment(form?.recurrence?.until).toDate()
+                                : null
+                            }
+                            onChange={(date) =>
+                              setForm({
+                                ...form,
+                                recurrence: {
+                                  ...form?.recurrence,
+                                  until: date
+                                    ? moment(date).format("YYYY-MM-DD")
+                                    : "",
+                                },
+                              })
+                            }
+                            minDate={moment(form?.startDate)
+                              .add(1, "day")
+                              .toDate()}
+                            className="w-full mt-1 px-3 py-2 border border-indigo-300 rounded-lg focus:border-indigo-500 outline-none"
+                            placeholderText="No end date"
+                          />
                         </div>
                       </div>
-                    )}
-                  </div>
-                )}
-              </div>
+
+                      {/* WEEKLY OPTIONS */}
+                      {form?.recurrence?.freq === "WEEKLY" && (
+                        <div>
+                          <label className="text-sm font-medium text-gray-700 block mb-3">
+                            Repeat on
+                          </label>
+                          <div className="flex flex-wrap gap-3">
+                            {["MO", "TU", "WE", "TH", "FR", "SA", "SU"].map(
+                              (day) => (
+                                <button
+                                  key={day}
+                                  type="button"
+                                  onClick={() => {
+                                    const byDay =
+                                      form?.recurrence?.byDay.includes(day)
+                                        ? form?.recurrence?.byDay?.filter(
+                                            (d) => d !== day
+                                          )
+                                        : [...form?.recurrence?.byDay, day];
+                                    setForm({
+                                      ...form,
+                                      recurrence: {
+                                        ...form?.recurrence,
+                                        byDay,
+                                      },
+                                    });
+                                  }}
+                                  className={`px-4 py-2 rounded-lg font-medium transition ${
+                                    form?.recurrence?.byDay.includes(day)
+                                      ? "bg-indigo-600 text-white shadow-lg"
+                                      : "bg-white border-2 border-indigo-300 text-indigo-700 hover:bg-indigo-50"
+                                  }`}
+                                >
+                                  {day}
+                                </button>
+                              )
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           )}
 
+          {form?.recurrence?.freq && form?.recurrence?.until && (
+            <div className="flex justify-start items-center py-0 my-0 -mt-1 mb-1 ">
+              <p className="text-xs text-blue-800">
+                {describeRecurrence(form?.recurrence)}{" "}
+              </p>
+            </div>
+          )}
+
           {/* BUTTONS  */}
-          <div className="flex justify-end gap-4 pt-8 border-t">
+          <div className="flex justify-end gap-4 pt-8 border-t border-t-slate-300">
             {isEdit && (
               <button
                 onClick={handleDelete}
@@ -579,7 +705,11 @@ const AvailabilityModal = ({
               </button>
             )}
             <button
-              onClick={() => setModalOpen(false)}
+              onClick={() => {
+                setDeleteMode("this");
+                setEditMode("this");
+                setModalOpen(false);
+              }}
               className="px-6 py-3 bg-gray-200 text-gray-800 rounded-xl hover:bg-gray-300 font-bold"
             >
               Cancel
@@ -590,7 +720,8 @@ const AvailabilityModal = ({
                 Object.keys(errors).length > 0 ||
                 !form?.startDate ||
                 !form?.timeStart ||
-                !form?.timeEnd
+                !form?.timeEnd ||
+                !form?.description
               }
               className="px-8 py-3 bg-gradient-to-r from-indigo-600 to-purple-700 text-white rounded-xl hover:from-indigo-700 hover:to-purple-800 font-bold shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >

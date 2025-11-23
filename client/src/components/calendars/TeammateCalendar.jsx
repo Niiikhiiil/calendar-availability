@@ -138,8 +138,14 @@ const TeammateCalendar = ({
                     {/* Time + Title */}
                     <div className="flex flex-row items-center justify-between gap-2 mt-0 mb-1">
                       <span className="text-[8px] font-bold tracking-wider">
-                        {moment(start).format("h:mm A")} –{" "}
-                        {moment(end).format("h:mm A")}
+                        {title === "LEAVE" ? (
+                          " "
+                        ) : (
+                          <span>
+                            {moment(start).format("h:mm A")} -{" "}
+                            {moment(end).format("h:mm A")}
+                          </span>
+                        )}
                       </span>
                       {isRecurring && <Repeat className="w-4 h-4 opacity-80" />}
                     </div>
