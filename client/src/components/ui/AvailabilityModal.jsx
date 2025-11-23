@@ -140,7 +140,13 @@ const AvailabilityModal = ({
             </h2>
           </div>
           <button
-            onClick={() => setModalOpen(false)}
+            onClick={() => {
+              setDeleteMode("this");
+              setEditMode("this");
+              setModalOpen(false);
+              setRangeStart("");
+              setRangeEnd("");
+            }}
             className="p-2 hover:bg-white/20 rounded-xl"
           >
             <X className="w-6 h-6 text-white" />
@@ -212,6 +218,18 @@ const AvailabilityModal = ({
                   <span>Custom range</span>
                 </label>
 
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="editMode"
+                    value="pattern"
+                    checked={editMode === "pattern"}
+                    onChange={(e) => setEditMode(e.target.value)}
+                    className="mr-2"
+                  />
+                  <span>All Pattern Change</span>
+                </label>
+
                 {editMode === "range" && (
                   <div className="mt-3 ml-6 grid grid-cols-2 gap-3">
                     <div>
@@ -274,11 +292,8 @@ const AvailabilityModal = ({
                           setRangeEnd(moment(date).format("YYYY-MM-DD"));
                         }}
                         minDate={
-                          form?.recurrence?.start_date
-                            ? moment(
-                                form.recurrence.start_date,
-                                "YYYY-MM-DD"
-                              ).toDate()
+                          rangeStart
+                            ? moment(rangeStart, "YYYY-MM-DD").toDate()
                             : null
                         }
                         maxDate={
@@ -353,19 +368,83 @@ const AvailabilityModal = ({
                 </label>
                 {deleteMode === "range" && (
                   <div className="mt-3 ml-6 grid grid-cols-2 gap-3">
-                    <input
-                      type="date"
-                      value={rangeStart}
-                      onChange={(e) => setRangeStart(e.target.value)}
-                      className="px-3 py-2 border rounded-md text-sm"
-                    />
-                    <input
-                      type="date"
-                      value={rangeEnd}
-                      min={rangeStart}
-                      onChange={(e) => setRangeEnd(e.target.value)}
-                      className="px-3 py-2 border rounded-md text-sm"
-                    />
+                    <div>
+                      <label className="block text-xs text-gray-600">
+                        From
+                      </label>
+                      {/* <input
+                        type="date"
+                        value={rangeStart}
+                        minDate={form?.recurrence?.startDate}
+                        onChange={(e) => setRangeStart(e.target.value)}
+                        className="w-full px-3 py-2 border rounded-md"
+                      /> */}
+                      <DatePicker
+                        selected={
+                          rangeStart
+                            ? moment(rangeStart, "YYYY-MM-DD").toDate()
+                            : null
+                        }
+                        onChange={(date) => {
+                          setRangeStart(moment(date).format("YYYY-MM-DD"));
+                        }}
+                        minDate={
+                          form?.recurrence?.start_date
+                            ? moment(
+                                form.recurrence.start_date,
+                                "YYYY-MM-DD"
+                              ).toDate()
+                            : null
+                        }
+                        maxDate={
+                          form?.recurrence?.end_date
+                            ? moment(
+                                form.recurrence.end_date,
+                                "YYYY-MM-DD"
+                              ).toDate()
+                            : null
+                        }
+                        dateFormat="dd-MM-yyyy"
+                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 outline-none cursor-pointer"
+                        placeholderText="Select Start Date"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-600">To</label>
+                      {/* <input
+                        type="date"
+                        value={rangeEnd}
+                        minDate={rangeStart}
+                        onChange={(e) => setRangeEnd(e.target.value)}
+                        className="w-full px-3 py-2 border rounded-md"
+                      /> */}
+                      <DatePicker
+                        selected={
+                          rangeEnd
+                            ? moment(rangeEnd, "YYYY-MM-DD").toDate()
+                            : null
+                        }
+                        onChange={(date) => {
+                          setRangeEnd(moment(date).format("YYYY-MM-DD"));
+                        }}
+                        minDate={
+                          rangeStart
+                            ? moment(rangeStart, "YYYY-MM-DD").toDate()
+                            : null
+                        }
+                        maxDate={
+                          form?.recurrence?.end_date
+                            ? moment(
+                                form.recurrence.end_date,
+                                "YYYY-MM-DD"
+                              ).toDate()
+                            : null
+                        }
+                        dateFormat="dd-MM-yyyy"
+                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 outline-none cursor-pointer"
+                        placeholderText="Select End Date"
+                      />
+                    </div>
                   </div>
                 )}
               </div>
@@ -553,8 +632,8 @@ const AvailabilityModal = ({
                 </select>
               </div>
               {/* RECURRENCE */}
-              {((selectedEvent?.ruleId && editMode === "all") ||
-                !selectedEvent?.ruleId) && (
+              {((selectedEvent?.ruleId && editMode === "pattern") ||
+                !selectedEvent) && (
                 <div className="border-t-2 border-gray-100 pt-6">
                   <label className="block text-sm font-semibold text-gray-700 mb-4">
                     Recurrence
@@ -709,6 +788,8 @@ const AvailabilityModal = ({
                 setDeleteMode("this");
                 setEditMode("this");
                 setModalOpen(false);
+                setRangeStart("");
+                setRangeEnd("");
               }}
               className="px-6 py-3 bg-gray-200 text-gray-800 rounded-xl hover:bg-gray-300 font-bold"
             >

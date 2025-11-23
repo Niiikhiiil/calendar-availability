@@ -204,7 +204,9 @@ export default function MyCalendar() {
           form.recurrence?.freq &&
           form.recurrence.freq !== "NONE" &&
           form.status !== "LEAVE" &&
-          ((selectedEvent?.ruleId && editMode === "all") || !selectedEvent)
+          ((selectedEvent?.ruleId && editMode === "pattern") ||
+            !selectedEvent ||
+            (selectedEvent?.id && !selectedEvent?.ruleId))
             ? { ...form.recurrence }
             : undefined,
       };
@@ -237,7 +239,10 @@ export default function MyCalendar() {
         let url = apiUrls.updateOneAvailability(instanceId);
 
         // ONLY FOR ALL EDIT MODE
-        if (editMode === "all" && selectedEvent.extendedProps.isRecurring) {
+        if (
+          (editMode === "all" || editMode === "pattern") &&
+          selectedEvent.extendedProps.isRecurring
+        ) {
           url = apiUrls.updateAllAvailability(instanceId);
         }
 
@@ -341,8 +346,6 @@ export default function MyCalendar() {
       setEditMode("this");
     }
   };
-
-  console.log("selectedEvent", selectedEvent);
 
   return (
     <>
