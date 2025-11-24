@@ -45,9 +45,15 @@ export default function TeamCalendars() {
 
   const getOtherUserEvents = async (user) => {
     try {
+      const api = teammateCalendarRefs.current[selectedUsers?.id]?.getApi();
+      const view = api.view;
       setIsLoading(`Loading ${user.name}'s calendar...`);
-      const start = moment(currentRange.start).format("YYYY-MM-DD");
-      const end = moment(currentRange.end).format("YYYY-MM-DD");
+      // const start = moment(currentRange.start).format("YYYY-MM-DD");
+      // const end = moment(currentRange.end).format("YYYY-MM-DD");
+      const start = moment(view.currentStart).format("YYYY-MM-DD");
+      const end = moment(view.currentEnd)
+        .subtract(1, "day")
+        .format("YYYY-MM-DD");
 
       const res = await axiosInstance.get(
         apiUrls.getOtherUserAvailability(user.id, start, end)
@@ -80,7 +86,7 @@ export default function TeamCalendars() {
       getOtherUserEvents(selectedUsers);
     });
     return () => socket.current?.disconnect();
-  }, [selectedUsers]);
+  }, [selectedUsers, currentRange, currentView]);
 
   useEffect(() => {
     const getAllUsers = async () => {

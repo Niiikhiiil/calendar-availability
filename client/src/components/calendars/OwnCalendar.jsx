@@ -42,16 +42,16 @@ const OwnCalendar = ({
       <div className="p-3 sm:p-4 h-full max-h-[calc(100vh-250px)] overflow-auto">
         <div className="min-w-[900px] overflow-x-auto h-full">
           <FullCalendar
+            showNonCurrentDates={false}
+            fixedWeekCount={false}
             nowIndicator
             ref={calendarRef}
             currentView={currentView}
             plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
             initialView="timeGridWeek"
-            // THIS IS THE MAIN FIX
             initialDate={moment().format("YYYY-MM-DD")} // Today in YYYY-MM-DD
-            // Optional: Lock calendar to current month + future (no past months)
             validRange={{
-              start: moment().startOf("month").format("YYYY-MM-DD"), // Start from this month
+              start: moment().startOf("month").format("YYYY-MM-DD"),
             }}
             selectable
             selectAllow={(selectInfo) => {
@@ -128,7 +128,7 @@ const OwnCalendar = ({
                   {/* MAIN EVENT CARD */}
                   <div
                     data-tooltip-id={tooltipId}
-                    className={`group relative flex flex-col p-1.5 h-full z-[999] rounded-lg ${bgColor} text-white shadow-md border-1 ${borderColor} transition-all duration-200 hover:shadow-xl hover:scale-[1.02] cursor-pointer overflow-hidden`}
+                    className={`group relative flex flex-col p-1.5 h-full z-[999] w-full rounded-lg ${bgColor} text-white shadow-md border-1 ${borderColor} transition-all duration-200 hover:shadow-xl hover:scale-[1.02] cursor-pointer overflow-hidden`}
                   >
                     {/* Recurring Badge */}
                     {isRecurring && currentView !== "dayGridMonth" && (

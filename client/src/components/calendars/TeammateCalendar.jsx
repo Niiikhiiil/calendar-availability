@@ -57,6 +57,8 @@ const TeammateCalendar = ({
       <div className="p-3 sm:p-4 h-full max-h-[calc(100vh-250px)] overflow-auto">
         <div className="min-w-[900px] overflow-x-auto h-full">
           <FullCalendar
+            showNonCurrentDates={false}
+            fixedWeekCount={false}
             ref={calendarRef}
             plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
             initialView="timeGridWeek"
@@ -68,7 +70,6 @@ const TeammateCalendar = ({
             firstDay={1}
             allDayText="All day"
             nowIndicator
-            // datesSet={(arg) => onViewChange(arg.view.type)}
             currentView={currentView}
             dayHeaderContent={(args) => {
               if (
